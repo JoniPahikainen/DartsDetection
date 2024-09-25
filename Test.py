@@ -12,12 +12,14 @@ else:
     print(f"Folder '{image_folder}' already exists.")
 
 def test_cameras(save=False):
-    for i in range(10):  # Loop through video devices from 0 to 9
+    open = []
+    for i in range(10):
         cap = cv2.VideoCapture(i)
         if cap.isOpened():
             ret, frame = cap.read()
             if ret:
                 print(f"Camera {i} is working, saving frame as camera_{i}_image.jpg")
+                open.append(i)
                 if save:
                     cv2.imwrite(f'images/test/camera_{i}_image.jpg', frame)  # Save the frame instead of showing it
             else:
@@ -26,7 +28,7 @@ def test_cameras(save=False):
             print(f"Camera {i} is not available.")
         cap.release()
 
-    print("Done testing cameras.")
+    print(f"Done testing cameras. Open cameras are: {open}")
 
 
 def test_canny(camera_number, width=1280, height=720):
