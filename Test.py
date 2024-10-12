@@ -178,10 +178,7 @@ def save_clear(camera_number, width=1280, height=720):
 
     print("Frame captured, starting processing...")
 
-    # Convert the frame to grayscale
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    print("Converted to grayscale.") 
-    cv2.imwrite(f"images/test/clear_{camera_number}.jpg", gray)
+    cv2.imwrite(f"images/test/clear_{camera_number}.jpg", frame)
     print(f"Saved clear_{camera_number}.jpg")
 
 
