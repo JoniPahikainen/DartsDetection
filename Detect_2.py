@@ -399,4 +399,3 @@ dartInfo = dartThrow()
 if __name__ == '__main__':
     print ("Welcome to darts!")
     getDart()
-    #getTransformation()
