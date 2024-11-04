@@ -1,5 +1,82 @@
 import numpy as np
 import cv2
+import time
+import numpy as np
+import math
+from shapely.geometry import Point, LineString
+import shapely
+
+def cam2gray(cam):
+    success, image = cam.read()
+    img_g = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    return success, img_g
+
+def getThreshold(cam, t):
+    success, t_plus = cam2gray(cam)
+    if not success:
+        return None
+    
+    dimg = cv2.absdiff(t, t_plus)
+    blur = cv2.GaussianBlur(dimg, (5, 5), 0)
+    _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
+
+    # Define a kernel for the morphological operation
+    kernel = np.ones((5, 5), np.uint8)
+
+    # Closing to close small holes in the foreground
+    closing = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+    # Opening to remove noise
+    opening = cv2.morphologyEx(closing, cv2.MORPH_OPEN, kernel)
+    
+    return opening
+
+
+
+def diff2blur(cam, t):
+    _, t_plus = cam2gray(cam)
+    dimg = cv2.absdiff(t, t_plus)
+    kernel = np.ones((5, 5), np.float32) / 25
+    blur = cv2.filter2D(dimg, -1, kernel)
+    return t_plus, blur
+
+def getCorners(img_in):
+    edges = cv2.goodFeaturesToTrack(img_in, 640, 0.0008, 1, mask=None, blockSize=3, useHarrisDetector=1, k=0.06)
+    corners = np.intp(edges)
+    return corners
+
+def filterCorners(corners, na, original_image=None):
+    mean_corners = np.mean(corners, axis=0)
+    corners_new = np.array([i for i in corners if abs(mean_corners[0][0] - i[0][0]) <= 180 and abs(mean_corners[0][1] - i[0][1]) <= 120])
+
+    # If an original image is provided, mark and save the points
+    if original_image is not None:
+        # Create a copy of the original image to draw points on
+        testimg = original_image.copy()
+        
+        for i in corners_new:
+            xl, yl = i.ravel()
+            cv2.circle(testimg, (xl, yl), 3, (255, 0, 0), -1)  # Blue dots for visualization
+        
+        # Save the image with marked points
+        cv2.imwrite(f"images/corners_marked_{na}.jpg", testimg)
+        print("Saved image with marked corners as 'corners_marked.jpg'.")
+
+    return corners_new
+
+"""
+def filterCorners(corners):
+    mean_corners = np.mean(corners, axis=0)
+    corners_new = np.array([i for i in corners if abs(mean_corners[0][0] - i[0][0]) <= 180 and abs(mean_corners[0][1] - i[0][1]) <= 120])
+    return corners_new
+"""
+
+def filterCornersLine(corners, rows, cols):
+    [vx, vy, x, y] = cv2.fitLine(corners, cv2.DIST_HUBER, 0, 0.1, 0.1)
+    lefty = int((-x[0] * vy[0] / vx[0]) + y[0])
+    righty = int(((cols - x[0]) * vy[0] / vx[0]) + y[0])
+    corners_final = np.array([i for i in corners if abs((righty - lefty) * i[0][0] - (cols - 1) * i[0][1] + cols * lefty - righty) / np.sqrt((righty - lefty)**2 + (cols - 1)**2) <= 40])
+    return corners_final
 
 class KalmanFilter:
     def __init__(self, dt, u_x, u_y, std_acc, x_std_meas, y_std_meas):
@@ -46,142 +123,260 @@ class KalmanFilter:
         self.P = np.dot(np.dot(I - np.dot(K, self.H), self.P),
                         (I - np.dot(K, self.H)).T) + np.dot(np.dot(K, self.R), K.T)
 
-def find_dart_location(image_clear, image_with_dart, kalman_filter=None):
-    # Convert both images to grayscale
-    gray_clear = cv2.cvtColor(image_clear, cv2.COLOR_BGR2GRAY)
-    gray_with_dart = cv2.cvtColor(image_with_dart, cv2.COLOR_BGR2GRAY)
-
-    # Get the difference between the two images
-    diff = cv2.absdiff(gray_clear, gray_with_dart)
-
-    # Threshold to get the dart area
-    _, thresh = cv2.threshold(diff, 50, 255, cv2.THRESH_BINARY)
-
-    # Find contours to locate the dart
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-
-    MIN_CONTOUR_AREA = 50  # Set a minimum contour area (this needs experimentation)
-    MAX_CONTOUR_AREA = 500
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if MIN_CONTOUR_AREA < area < MAX_CONTOUR_AREA:
-            x, y, w, h = cv2.boundingRect(contour)
-            aspect_ratio = float(w) / h
-            if aspect_ratio < 0.5:  # Assuming narrow aspect ratio is for the steel tip
-                dart_center = (x + w // 2, y + h // 2)
-                print(f"Dart (likely steel tip) detected at: {dart_center}")
-                return dart_center
-            else:
-                print("Detected contour is likely the flights, not the steel tip.")
-    return None
-
-def capture_and_process(camera_index, clear_image_path, kalman_filter):
-    # Initialize the camera
-    cam = cv2.VideoCapture(camera_index)
-    
-    # Set camera properties
-    cam.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-
-    # Check if the camera opened successfully
-    if not cam.isOpened():
-        print(f"Failed to open camera {camera_index}")
-        return None
-
-    # Load the clear reference image for this camera
-    image_clear = cv2.imread(clear_image_path)
-    if image_clear is None:
-        print(f"Error: Could not load the clear reference image for camera {camera_index}")
-        return None
-
-    # Capture a frame
-    ret, frame = cam.read()
-    if not ret:
-        print(f"Failed to capture image from camera {camera_index}")
-        cam.release()
-        return None
-
-    # Find the dart location
-    dart_location = find_dart_location(image_clear, frame, kalman_filter)
-
-    # Annotate the frame if a dart is detected
-    if dart_location is not None:
-        cv2.circle(frame, dart_location, 10, (0, 255, 0), -1)
-        print(f"Dart detected in Camera {camera_index} at: {dart_location}")
+def getRealLocation(corners_final, mount, prev_tip_point=None, blur=None, kalman_filter=None):
+    if mount == "righttttt":
+        #loc = np.argmax(corners_final, axis=0)
+        loc = np.argmin(corners_final, axis=0)
     else:
-        print(f"No dart detected in Camera {camera_index}")
+        print(f"here: {mount}")
+        #loc = np.argmin(corners_final, axis=0)
+        loc = np.argmax(corners_final, axis=0)
+    locationofdart = corners_final[loc]
+    
+    # Skeletonize the dart contour
+    dart_contour = corners_final.reshape((-1, 1, 2))
+    skeleton = cv2.ximgproc.thinning(cv2.drawContours(np.zeros_like(blur), [dart_contour], -1, 255, thickness=cv2.FILLED))
+    
+    # Detect the dart tip using skeletonization and Kalman filter
+    dart_tip = find_dart_tip(skeleton, prev_tip_point, kalman_filter)
+    
+    if dart_tip is not None:
+        tip_x, tip_y = dart_tip
+        # Draw a circle around the dart tip
+        if blur is not None:
+            cv2.circle(blur, (tip_x, tip_y), 1, (0, 255, 0), 1)
+        
+        locationofdart = dart_tip
+    
+    return locationofdart, dart_tip
 
-    # Display the frame
-    cv2.imshow(f"Camera {camera_index}", frame)
+from shapely.geometry import Point, LineString, Polygon
 
-    # Release the camera
-    cam.release()
-    return dart_location
-
-def selected_points_event(event, x, y, flags, param):
-    frame, selected_points, camera_index = param
-    if event == cv2.EVENT_LBUTTONDOWN and len(selected_points) < 4:
-        selected_points.append([x, y])
-        cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
-        cv2.imshow(f"Camera {camera_index} - Select 4 Points", frame)
-        if len(selected_points) == 4:
-            cv2.destroyWindow(f"Camera {camera_index} - Select 4 Points")
-
-def calibrate(camera):
-    image = cv2.VideoCapture(camera)
-    ret, frame = image.read()
-    if  ret:
-        window_name = f"Camera {camera} - Select 4 points"
-        cv2.namedWindow(window_name)
-        cv2.imshow(window_name, frame)
-
-        selected_points = []
-        cv2.setMouseCallback(window_name, selected_points_event, (frame, selected_points, camera))
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-        image.release()
-
-        if len(selected_points) == 4:
-            print(selected_points)
-            return np.float32(selected_points)
-
+def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
+    # Find the contour of the skeleton
+    contours, _ = cv2.findContours(skeleton, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if len(contours) > 0:
+        # Find the contour with the maximum area (assuming it represents the dart)
+        dart_contour = max(contours, key=cv2.contourArea)
+        
+        # Convert the contour to a Shapely Polygon
+        dart_polygon = Polygon(dart_contour.reshape(-1, 2))
+        
+        # Find the lowest point of the dart contour
+        dart_points = dart_polygon.exterior.coords
+        lowest_point = max(dart_points, key=lambda x: x[1])
+        
+        # Consider the lowest point as the dart tip
+        tip_point = lowest_point
+        
+        # Predict the dart tip position using the Kalman filter
+        predicted_tip = kalman_filter.predict()
+        
+        # Update the Kalman filter with the observed dart tip position
+        kalman_filter.update(np.array([[tip_point[0]], [tip_point[1]]]))
+        
+        return int(tip_point[0]), int(tip_point[1])
+    
     return None
+
 
 def main():
+    cam_R = cv2.VideoCapture(4)  # Use the appropriate camera index for the right camera
+    cam_L = cv2.VideoCapture(6)  # Use the appropriate camera index for the left camera
+    cam_C = cv2.VideoCapture(8)  # Use the appropriate camera index for the center camera
 
-    calibrate(4)
-    """
-    # Paths to the clear dartboard images for each camera
-    clear_image_paths = {
-        4: 'images/test/clear_4.jpg',  # Right camera
-        6: 'images/test/clear_6.jpg',  # Center camera
-        8: 'images/test/clear_8.jpg'   # Left camera
-    }
+    print("Start")
 
+    width = 432
+    height = 432
+    cam_R.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cam_R.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cam_L.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cam_L.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cam_C.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cam_C.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+    # Check if the cameras are opened successfully
+    if not cam_R.isOpened() or not cam_L.isOpened() or not cam_C.isOpened():
+        print("Failed to open one or more cameras.")
+        return
+
+    # Read first image twice to start loop
+    _, _ = cam2gray(cam_R)
+    _, _ = cam2gray(cam_L)
+    _, _ = cam2gray(cam_C)
+    time.sleep(0.1)
+    success, t_R = cam2gray(cam_R)
+    _, t_L = cam2gray(cam_L)
+    _, t_C = cam2gray(cam_C)
+
+    prev_tip_point_R = None
+    prev_tip_point_L = None
+    prev_tip_point_C = None
+    
     # Initialize Kalman filters for each camera
-    dt = 1.0
-    kalman_filters = {
-        4: KalmanFilter(dt, 0, 0, 1.0, 0.1, 0.1),
-        6: KalmanFilter(dt, 0, 0, 1.0, 0.1, 0.1),
-        8: KalmanFilter(dt, 0, 0, 1.0, 0.1, 0.1)
-    }
+    dt = 1.0 / 30.0  # Assuming 30 FPS
+    u_x = 0
+    u_y = 0
+    std_acc = 1.0
+    x_std_meas = 0.1
+    y_std_meas = 0.1
+    
+    kalman_filter_R = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
+    kalman_filter_L = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
+    kalman_filter_C = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
 
-    while True:
-        # Process each camera one at a time
-        for camera_index in [4, 6, 8]:
-            # Call the function to capture and process the camera
-            capture_and_process(camera_index, clear_image_paths[camera_index], kalman_filters[camera_index])
+    takeout_threshold = 20000  # Adjust this value based on the size of your hand and distance from the camera
+    takeout_delay = 1.0  # Delay in seconds after takeout procedure
 
-            # Wait for a short time before switching to the next camera
-            if cv2.waitKey(500) & 0xFF == ord('q'):
-                break
+    while success:
+        print("success")
+        time.sleep(0.1)
+        thresh_R = getThreshold(cam_R, t_R)
+        thresh_L = getThreshold(cam_L, t_L)
+        thresh_C = getThreshold(cam_C, t_C)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        cv2.imshow("Dart Detection - thresh_R", thresh_R)
+        cv2.imshow("Dart Detection - thresh_L", thresh_L)
+        cv2.imshow("Dart Detection - thresh_C", thresh_C)
+
+
+        print(f"r: {cv2.countNonZero(thresh_R)}, l: {cv2.countNonZero(thresh_L)}, c: {cv2.countNonZero(thresh_C)},")
+
+        #if (cv2.countNonZero(thresh_R) > 1000 and cv2.countNonZero(thresh_R) < 7500) or (cv2.countNonZero(thresh_L) > 1000 and cv2.countNonZero(thresh_L) < 7500) or (cv2.countNonZero(thresh_C) > 1000 and cv2.countNonZero(thresh_C) < 7500):
+
+        if (cv2.countNonZero(thresh_R) > 500 and cv2.countNonZero(thresh_R) < 7500) or (cv2.countNonZero(thresh_L) > 500 and cv2.countNonZero(thresh_L) < 7500) or (cv2.countNonZero(thresh_C) > 500 and cv2.countNonZero(thresh_C) < 7500):
+
+            count_R = cv2.countNonZero(thresh_R)
+            count_L = cv2.countNonZero(thresh_L)
+            count_C = cv2.countNonZero(thresh_C)
+
+            cv2.putText(thresh_R, f"Count: {count_R}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
+            cv2.putText(thresh_L, f"Count: {count_L}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
+            cv2.putText(thresh_C, f"Count: {count_C}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
+
+
+            cv2.imwrite("images/thresh_R.jpg", thresh_R)
+            cv2.imwrite("images/thresh_L.jpg", thresh_L)
+            cv2.imwrite("images/thresh_C.jpg", thresh_C)
+
+            time.sleep(0.2)
+            t_plus_R, blur_R = diff2blur(cam_R, t_R)
+            t_plus_L, blur_L = diff2blur(cam_L, t_L)
+            t_plus_C, blur_C = diff2blur(cam_C, t_C)
+            cv2.imshow("Dart Detection - blur_R", blur_R)
+            cv2.imshow("Dart Detection - blur_L", blur_L)
+            cv2.imshow("Dart Detection - blur_C", blur_C)
+
+
+            corners_R = getCorners(blur_R)
+            corners_L = getCorners(blur_L)
+            corners_C = getCorners(blur_C)
+
+            if corners_R.size < 40 and corners_L.size < 40 and corners_C.size < 40:
+                print("### dart not detected")
+                continue
+            """
+            corners_f_R = filterCorners(corners_R)
+            corners_f_L = filterCorners(corners_L)
+            corners_f_C = filterCorners(corners_C)
+            """
+
+            success_R, ttt_R = cam_R.read()
+            success_L, ttt_L = cam_L.read()
+            success_C, ttt_C = cam_C.read()
+
+            corners_f_R = filterCorners(corners_R, "r", ttt_R)
+            corners_f_L = filterCorners(corners_L, "l", ttt_L)
+            corners_f_C = filterCorners(corners_C, "c", ttt_C)
+
+            if corners_f_R.size < 30 and corners_f_L.size < 30 and corners_f_C.size < 30:
+                print("### dart not detected")
+                continue
+
+            rows, cols = blur_R.shape[:2]
+            corners_final_R = filterCornersLine(corners_f_R, rows, cols)
+            corners_final_L = filterCornersLine(corners_f_L, rows, cols)
+            corners_final_C = filterCornersLine(corners_f_C, rows, cols)
+
+            _, thresh_R = cv2.threshold(blur_R, 60, 255, 0)
+            _, thresh_L = cv2.threshold(blur_L, 60, 255, 0)
+            _, thresh_C = cv2.threshold(blur_C, 60, 255, 0)
+
+            if cv2.countNonZero(thresh_R) > 15000 or cv2.countNonZero(thresh_L) > 15000 or cv2.countNonZero(thresh_C) > 15000:
+                continue
+
+            print("Dart detected")
+
+            try:
+                locationofdart_R, prev_tip_point_R = getRealLocation(corners_final_R, "right", prev_tip_point_R, blur_R, kalman_filter_R)
+                locationofdart_L, prev_tip_point_L = getRealLocation(corners_final_L, "left", prev_tip_point_L, blur_L, kalman_filter_L)
+                locationofdart_C, prev_tip_point_C = getRealLocation(corners_final_C, "center", prev_tip_point_C, blur_C, kalman_filter_C)
+
+                success_R, tt_R = cam_R.read()
+                success_L, tt_L = cam_L.read()
+                success_C, tt_C = cam_C.read()
+
+                    # Check if all frames were read successfully
+                if not (success_R and success_L and success_C):
+                    print("Failed to read one or more camera frames.")
+                    continue  # Skip to the next iteration if any frame capture fails
+
+
+                if isinstance(locationofdart_R, tuple) and len(locationofdart_R) == 2:
+                    cv2.circle(tt_R, locationofdart_R, 10, (255, 255, 255), 2, 8)
+                    cv2.circle(tt_R, locationofdart_R, 2, (0, 255, 0), 2, 8)
+                    print(f"Right Camera - Dart Location: {locationofdart_R}")
+
+                if isinstance(locationofdart_L, tuple) and len(locationofdart_L) == 2:
+                    cv2.circle(tt_L, locationofdart_L, 10, (255, 255, 255), 2, 8)
+                    cv2.circle(tt_L, locationofdart_L, 2, (0, 255, 0), 2, 8)
+                    print(f"Left Camera - Dart Location: {locationofdart_L}")
+
+                if isinstance(locationofdart_C, tuple) and len(locationofdart_C) == 2:
+                    cv2.circle(tt_C, locationofdart_C, 10, (255, 255, 255), 2, 8)
+                    cv2.circle(tt_C, locationofdart_C, 2, (0, 255, 0), 2, 8)
+                    print(f"Center Camera - Dart Location: {locationofdart_C}")
+
+            except Exception as e:
+                print(f"Something went wrong in finding the dart's location: {str(e)}")
+                continue
+
+            cv2.imshow("Dart Detection - Right", tt_R)
+            cv2.imshow("Dart Detection - Left", tt_L)
+            cv2.imshow("Dart Detection - Center", tt_C)
+
+            # Update the reference frames after a dart has been detected
+            success, t_R = cam2gray(cam_R)
+            _, t_L = cam2gray(cam_L)
+            _, t_C = cam2gray(cam_C)
+
+        else:
+            if cv2.countNonZero(thresh_R) > takeout_threshold or cv2.countNonZero(thresh_L) > takeout_threshold or cv2.countNonZero(thresh_C) > takeout_threshold:
+                print("Takeout procedure initiated.")
+                # Perform takeout actions here, such as resetting variables or updating the reference frames
+                prev_tip_point_R = None
+                prev_tip_point_L = None
+                prev_tip_point_C = None
+
+                # Wait for the specified delay to allow hand removal
+                start_time = time.time()
+                while time.time() - start_time < takeout_delay:
+                    success, t_R = cam2gray(cam_R)
+                    _, t_L = cam2gray(cam_L)
+                    _, t_C = cam2gray(cam_C)
+                    time.sleep(0.1)
+
+                print("Takeout procedure completed.")
+
+        if cv2.waitKey(10) == 113: #113 == 'q'
             break
 
+    cam_R.release()
+    cam_L.release()
+    cam_C.release()
     cv2.destroyAllWindows()
-    """
-
+    
 if __name__ == "__main__":
-    main()
+    main() 
