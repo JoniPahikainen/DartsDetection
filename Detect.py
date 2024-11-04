@@ -3,73 +3,65 @@ import cv2
 import time
 import numpy as np
 import math
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, Polygon
 import shapely
 
-def cam2gray(cam):
+def cam2gray(cam, flip=False):
     success, image = cam.read()
-    img_g = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    if flip and success:
+        image = cv2.flip(image, 0)
+    img_g = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY) if success else None
     return success, img_g
 
-def getThreshold(cam, t):
-    success, t_plus = cam2gray(cam)
-    if not success:
-        return None
-    
-    dimg = cv2.absdiff(t, t_plus)
-    blur = cv2.GaussianBlur(dimg, (5, 5), 0)
-    _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
 
-    # Define a kernel for the morphological operation
-    kernel = np.ones((5, 5), np.uint8)
+def initialize_camera(index, width=432, height=432):
+    cam = cv2.VideoCapture(index)
+    cam.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cam.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    return cam if cam.isOpened() else None
 
-    # Closing to close small holes in the foreground
-    closing = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-    # Opening to remove noise
+def apply_morphology(img, kernel_size=(5, 5)):
+    kernel = np.ones(kernel_size, np.uint8)
+    closing = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
     opening = cv2.morphologyEx(closing, cv2.MORPH_OPEN, kernel)
-    
     return opening
 
 
+def getThreshold(cam, t, flip=False):
+    success, t_plus = cam2gray(cam, flip=flip)
+    if not success:
+        return None
+    dimg = cv2.absdiff(t, t_plus)
+    blur = cv2.GaussianBlur(dimg, (5, 5), 0)
+    _, thresh = cv2.threshold(blur, 40, 255, cv2.THRESH_BINARY)
+    return apply_morphology(thresh)
 
-def diff2blur(cam, t):
-    _, t_plus = cam2gray(cam)
+
+def diff2blur(cam, t, flip=False):
+    _, t_plus = cam2gray(cam, flip=flip)
     dimg = cv2.absdiff(t, t_plus)
     kernel = np.ones((5, 5), np.float32) / 25
     blur = cv2.filter2D(dimg, -1, kernel)
     return t_plus, blur
 
+
 def getCorners(img_in):
     edges = cv2.goodFeaturesToTrack(img_in, 640, 0.0008, 1, mask=None, blockSize=3, useHarrisDetector=1, k=0.06)
-    corners = np.intp(edges)
-    return corners
+    return np.intp(edges)
+
 
 def filterCorners(corners, na, original_image=None):
     mean_corners = np.mean(corners, axis=0)
     corners_new = np.array([i for i in corners if abs(mean_corners[0][0] - i[0][0]) <= 180 and abs(mean_corners[0][1] - i[0][1]) <= 120])
-
-    # If an original image is provided, mark and save the points
     if original_image is not None:
-        # Create a copy of the original image to draw points on
         testimg = original_image.copy()
-        
         for i in corners_new:
             xl, yl = i.ravel()
-            cv2.circle(testimg, (xl, yl), 3, (255, 0, 0), -1)  # Blue dots for visualization
-        
-        # Save the image with marked points
+            cv2.circle(testimg, (xl, yl), 3, (255, 0, 0), -1)
         cv2.imwrite(f"images/corners_marked_{na}.jpg", testimg)
-        print("Saved image with marked corners as 'corners_marked.jpg'.")
-
     return corners_new
 
-"""
-def filterCorners(corners):
-    mean_corners = np.mean(corners, axis=0)
-    corners_new = np.array([i for i in corners if abs(mean_corners[0][0] - i[0][0]) <= 180 and abs(mean_corners[0][1] - i[0][1]) <= 120])
-    return corners_new
-"""
 
 def filterCornersLine(corners, rows, cols):
     [vx, vy, x, y] = cv2.fitLine(corners, cv2.DIST_HUBER, 0, 0.1, 0.1)
@@ -77,6 +69,29 @@ def filterCornersLine(corners, rows, cols):
     righty = int(((cols - x[0]) * vy[0] / vx[0]) + y[0])
     corners_final = np.array([i for i in corners if abs((righty - lefty) * i[0][0] - (cols - 1) * i[0][1] + cols * lefty - righty) / np.sqrt((righty - lefty)**2 + (cols - 1)**2) <= 40])
     return corners_final
+
+
+def getRealLocation(corners_final, mount, prev_tip_point=None, blur=None, kalman_filter=None):
+    loc = np.argmax(corners_final, axis=0)
+    locationofdart = corners_final[loc]
+    
+    # Skeletonize the dart contour
+    dart_contour = corners_final.reshape((-1, 1, 2))
+    skeleton = cv2.ximgproc.thinning(cv2.drawContours(np.zeros_like(blur), [dart_contour], -1, 255, thickness=cv2.FILLED))
+    
+    # Detect the dart tip using skeletonization and Kalman filter
+    dart_tip = find_dart_tip(skeleton, prev_tip_point, kalman_filter)
+    
+    if dart_tip is not None:
+        tip_x, tip_y = dart_tip
+        # Draw a circle around the dart tip
+        if blur is not None:
+            cv2.circle(blur, (tip_x, tip_y), 1, (0, 255, 0), 1)
+        
+        locationofdart = dart_tip
+    
+    return locationofdart, dart_tip
+
 
 class KalmanFilter:
     def __init__(self, dt, u_x, u_y, std_acc, x_std_meas, y_std_meas):
@@ -122,35 +137,7 @@ class KalmanFilter:
         I = np.eye(self.H.shape[1])
         self.P = np.dot(np.dot(I - np.dot(K, self.H), self.P),
                         (I - np.dot(K, self.H)).T) + np.dot(np.dot(K, self.R), K.T)
-
-def getRealLocation(corners_final, mount, prev_tip_point=None, blur=None, kalman_filter=None):
-    if mount == "righttttt":
-        #loc = np.argmax(corners_final, axis=0)
-        loc = np.argmin(corners_final, axis=0)
-    else:
-        print(f"here: {mount}")
-        #loc = np.argmin(corners_final, axis=0)
-        loc = np.argmax(corners_final, axis=0)
-    locationofdart = corners_final[loc]
-    
-    # Skeletonize the dart contour
-    dart_contour = corners_final.reshape((-1, 1, 2))
-    skeleton = cv2.ximgproc.thinning(cv2.drawContours(np.zeros_like(blur), [dart_contour], -1, 255, thickness=cv2.FILLED))
-    
-    # Detect the dart tip using skeletonization and Kalman filter
-    dart_tip = find_dart_tip(skeleton, prev_tip_point, kalman_filter)
-    
-    if dart_tip is not None:
-        tip_x, tip_y = dart_tip
-        # Draw a circle around the dart tip
-        if blur is not None:
-            cv2.circle(blur, (tip_x, tip_y), 1, (0, 255, 0), 1)
         
-        locationofdart = dart_tip
-    
-    return locationofdart, dart_tip
-
-from shapely.geometry import Point, LineString, Polygon
 
 def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
     # Find the contour of the skeleton
@@ -182,34 +169,18 @@ def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
 
 
 def main():
-    cam_R = cv2.VideoCapture(4)  # Use the appropriate camera index for the right camera
-    cam_L = cv2.VideoCapture(6)  # Use the appropriate camera index for the left camera
-    cam_C = cv2.VideoCapture(8)  # Use the appropriate camera index for the center camera
-
-    print("Start")
-
-    width = 432
-    height = 432
-    cam_R.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cam_R.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    cam_L.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cam_L.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    cam_C.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cam_C.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-
-    # Check if the cameras are opened successfully
-    if not cam_R.isOpened() or not cam_L.isOpened() or not cam_C.isOpened():
-        print("Failed to open one or more cameras.")
-        return
+    cam_R = initialize_camera(4)
+    cam_L = initialize_camera(6)
+    cam_C = initialize_camera(8)
 
     # Read first image twice to start loop
-    _, _ = cam2gray(cam_R)
-    _, _ = cam2gray(cam_L)
-    _, _ = cam2gray(cam_C)
+    _, _ = cam2gray(cam_R, flip=True)
+    _, _ = cam2gray(cam_L, flip=True)
+    _, _ = cam2gray(cam_C, flip=False)
     time.sleep(0.1)
-    success, t_R = cam2gray(cam_R)
-    _, t_L = cam2gray(cam_L)
-    _, t_C = cam2gray(cam_C)
+    success, t_R = cam2gray(cam_R, flip=True)
+    _, t_L = cam2gray(cam_L, flip=True)
+    _, t_C = cam2gray(cam_C, flip=False)
 
     prev_tip_point_R = None
     prev_tip_point_L = None
@@ -233,9 +204,9 @@ def main():
     while success:
         print("success")
         time.sleep(0.1)
-        thresh_R = getThreshold(cam_R, t_R)
-        thresh_L = getThreshold(cam_L, t_L)
-        thresh_C = getThreshold(cam_C, t_C)
+        thresh_R = getThreshold(cam_R, t_R, flip=True)
+        thresh_L = getThreshold(cam_L, t_L, flip=True)
+        thresh_C = getThreshold(cam_C, t_C, flip=False)
 
         cv2.imshow("Dart Detection - thresh_R", thresh_R)
         cv2.imshow("Dart Detection - thresh_L", thresh_L)
@@ -256,19 +227,14 @@ def main():
             cv2.putText(thresh_L, f"Count: {count_L}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
             cv2.putText(thresh_C, f"Count: {count_C}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
 
-
-            cv2.imwrite("images/thresh_R.jpg", thresh_R)
-            cv2.imwrite("images/thresh_L.jpg", thresh_L)
-            cv2.imwrite("images/thresh_C.jpg", thresh_C)
-
             time.sleep(0.2)
-            t_plus_R, blur_R = diff2blur(cam_R, t_R)
-            t_plus_L, blur_L = diff2blur(cam_L, t_L)
-            t_plus_C, blur_C = diff2blur(cam_C, t_C)
+
+            t_plus_R, blur_R = diff2blur(cam_R, t_R, True)
+            t_plus_L, blur_L = diff2blur(cam_L, t_L, True)
+            t_plus_C, blur_C = diff2blur(cam_C, t_C, False)
             cv2.imshow("Dart Detection - blur_R", blur_R)
             cv2.imshow("Dart Detection - blur_L", blur_L)
             cv2.imshow("Dart Detection - blur_C", blur_C)
-
 
             corners_R = getCorners(blur_R)
             corners_L = getCorners(blur_L)
@@ -286,6 +252,8 @@ def main():
             success_R, ttt_R = cam_R.read()
             success_L, ttt_L = cam_L.read()
             success_C, ttt_C = cam_C.read()
+            ttt_R = cv2.flip(ttt_R, 0)
+            ttt_L = cv2.flip(ttt_L, 0)
 
             corners_f_R = filterCorners(corners_R, "r", ttt_R)
             corners_f_L = filterCorners(corners_L, "l", ttt_L)
@@ -304,6 +272,8 @@ def main():
             _, thresh_L = cv2.threshold(blur_L, 60, 255, 0)
             _, thresh_C = cv2.threshold(blur_C, 60, 255, 0)
 
+            print(f"thresh r:{cv2.countNonZero(thresh_R)} l:{cv2.countNonZero(thresh_L)} c:{cv2.countNonZero(thresh_C)}")
+
             if cv2.countNonZero(thresh_R) > 15000 or cv2.countNonZero(thresh_L) > 15000 or cv2.countNonZero(thresh_C) > 15000:
                 continue
 
@@ -317,6 +287,9 @@ def main():
                 success_R, tt_R = cam_R.read()
                 success_L, tt_L = cam_L.read()
                 success_C, tt_C = cam_C.read()
+
+                tt_R = cv2.flip(tt_R, 0)
+                tt_L = cv2.flip(tt_L, 0)
 
                     # Check if all frames were read successfully
                 if not (success_R and success_L and success_C):
@@ -348,9 +321,9 @@ def main():
             cv2.imshow("Dart Detection - Center", tt_C)
 
             # Update the reference frames after a dart has been detected
-            success, t_R = cam2gray(cam_R)
-            _, t_L = cam2gray(cam_L)
-            _, t_C = cam2gray(cam_C)
+            success, t_R = cam2gray(cam_R, flip=True)
+            _, t_L = cam2gray(cam_L, flip=True)
+            _, t_C = cam2gray(cam_C, flip=False)
 
         else:
             if cv2.countNonZero(thresh_R) > takeout_threshold or cv2.countNonZero(thresh_L) > takeout_threshold or cv2.countNonZero(thresh_C) > takeout_threshold:
