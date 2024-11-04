@@ -84,7 +84,6 @@ def getRealLocation(corners_final, mount, prev_tip_point=None, blur=None, kalman
     
     if dart_tip is not None:
         tip_x, tip_y = dart_tip
-        # Draw a circle around the dart tip
         if blur is not None:
             cv2.circle(blur, (tip_x, tip_y), 1, (0, 255, 0), 1)
         
@@ -198,8 +197,8 @@ def main():
     kalman_filter_L = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
     kalman_filter_C = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
 
-    takeout_threshold = 20000  # Adjust this value based on the size of your hand and distance from the camera
-    takeout_delay = 1.0  # Delay in seconds after takeout procedure
+    takeout_threshold = 20000
+    takeout_delay = 1.0
 
     while success:
         print("success")
@@ -212,10 +211,7 @@ def main():
         cv2.imshow("Dart Detection - thresh_L", thresh_L)
         cv2.imshow("Dart Detection - thresh_C", thresh_C)
 
-
         print(f"r: {cv2.countNonZero(thresh_R)}, l: {cv2.countNonZero(thresh_L)}, c: {cv2.countNonZero(thresh_C)},")
-
-        #if (cv2.countNonZero(thresh_R) > 1000 and cv2.countNonZero(thresh_R) < 7500) or (cv2.countNonZero(thresh_L) > 1000 and cv2.countNonZero(thresh_L) < 7500) or (cv2.countNonZero(thresh_C) > 1000 and cv2.countNonZero(thresh_C) < 7500):
 
         if (cv2.countNonZero(thresh_R) > 500 and cv2.countNonZero(thresh_R) < 7500) or (cv2.countNonZero(thresh_L) > 500 and cv2.countNonZero(thresh_L) < 7500) or (cv2.countNonZero(thresh_C) > 500 and cv2.countNonZero(thresh_C) < 7500):
 
@@ -243,11 +239,6 @@ def main():
             if corners_R.size < 40 and corners_L.size < 40 and corners_C.size < 40:
                 print("### dart not detected")
                 continue
-            """
-            corners_f_R = filterCorners(corners_R)
-            corners_f_L = filterCorners(corners_L)
-            corners_f_C = filterCorners(corners_C)
-            """
 
             success_R, ttt_R = cam_R.read()
             success_L, ttt_L = cam_L.read()
@@ -287,15 +278,12 @@ def main():
                 success_R, tt_R = cam_R.read()
                 success_L, tt_L = cam_L.read()
                 success_C, tt_C = cam_C.read()
-
                 tt_R = cv2.flip(tt_R, 0)
                 tt_L = cv2.flip(tt_L, 0)
 
-                    # Check if all frames were read successfully
                 if not (success_R and success_L and success_C):
                     print("Failed to read one or more camera frames.")
-                    continue  # Skip to the next iteration if any frame capture fails
-
+                    continue
 
                 if isinstance(locationofdart_R, tuple) and len(locationofdart_R) == 2:
                     cv2.circle(tt_R, locationofdart_R, 10, (255, 255, 255), 2, 8)
