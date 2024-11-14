@@ -6,6 +6,34 @@ import math
 from shapely.geometry import Point, LineString, Polygon
 import shapely
 
+# Constants
+NUM_CAMERAS = 3
+IMAGE_WIDTH = 1280
+IMAGE_HEIGHT = 720
+DARTBOARD_DIAMETER_MM = 451
+DOUBLE_RING_OUTER_RADIUS_MM = 170
+
+# Dartboard radii in mm
+BULLSEYE_RADIUS_MM = 6.35
+OUTER_BULL_RADIUS_MM = 15.9
+TRIPLE_RING_INNER_RADIUS_MM = 99
+TRIPLE_RING_OUTER_RADIUS_MM = 107
+DOUBLE_RING_INNER_RADIUS_MM = 162
+DOUBLE_RING_OUTER_RADIUS_MM = 170
+PIXELS_PER_MM = IMAGE_HEIGHT / DARTBOARD_DIAMETER_MM
+BULLSEYE_RADIUS_PX = int(BULLSEYE_RADIUS_MM * PIXELS_PER_MM)
+OUTER_BULL_RADIUS_PX = int(OUTER_BULL_RADIUS_MM * PIXELS_PER_MM)
+TRIPLE_RING_INNER_RADIUS_PX = int(TRIPLE_RING_INNER_RADIUS_MM * PIXELS_PER_MM)
+TRIPLE_RING_OUTER_RADIUS_PX = int(TRIPLE_RING_OUTER_RADIUS_MM * PIXELS_PER_MM)
+DOUBLE_RING_INNER_RADIUS_PX = int(DOUBLE_RING_INNER_RADIUS_MM * PIXELS_PER_MM)
+DOUBLE_RING_OUTER_RADIUS_PX = int(DOUBLE_RING_OUTER_RADIUS_MM * PIXELS_PER_MM)
+
+# Global variables
+dartboard_image = None
+score_images = None
+perspective_matrices = []
+center = (IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2)
+
 def cam2gray(cam, flip=False):
     success, image = cam.read()
     if flip and success:
@@ -92,6 +120,59 @@ def getRealLocation(corners_final, mount, prev_tip_point=None, blur=None, kalman
     return locationofdart, dart_tip
 
 
+def calculate_score(distance, angle):
+    if angle < 0:
+        angle += 2 * np.pi
+    sector_scores = [10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6]
+    sector_index = int(angle / (2 * np.pi) * 20)
+    print(f"Sector index: {sector_index}")
+    base_score = sector_scores[sector_index]
+    if distance <= BULLSEYE_RADIUS_PX:
+        return 50
+    elif distance <= OUTER_BULL_RADIUS_PX:
+        return 25
+    elif TRIPLE_RING_INNER_RADIUS_PX < distance <= TRIPLE_RING_OUTER_RADIUS_PX:
+        return base_score * 3
+    elif DOUBLE_RING_INNER_RADIUS_PX < distance <= DOUBLE_RING_OUTER_RADIUS_PX:
+        return base_score * 2
+    elif distance <= DOUBLE_RING_OUTER_RADIUS_PX:
+        return base_score
+    else:
+        return 0
+
+
+def calculate_score_from_coordinates(x, y, camera_index):
+    print(f"Calculating score for coordinates ({x}, {y}) from camera {camera_index}...")
+    inverse_matrix = cv2.invert(perspective_matrices[camera_index])[1]
+    print(f"Inverse matrix: {inverse_matrix}")
+    transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
+    print(f"Transformed coordinates: {transformed_coords}")
+    transformed_x, transformed_y = transformed_coords
+
+    print(f"Transformed coordinates: ({transformed_x}, {transformed_y})")
+    dx = transformed_x - center[0]
+    dy = transformed_y - center[1]
+    distance_from_center = math.sqrt(dx**2 + dy**2)
+    print(f"Distance from center: {distance_from_center}")
+    angle = math.atan2(dy, dx)
+    print(f"Angle: {angle}")
+    score = calculate_score(distance_from_center, angle)
+    return score
+
+
+def load_perspective_matrices():
+    perspective_matrices = []
+    for camera_index in range(NUM_CAMERAS):
+        try:
+            data = np.load(f'camera_calibration_{camera_index}.npz')
+            matrix = data['matrix']
+            perspective_matrices.append(matrix)
+        except FileNotFoundError:
+            print(f"Perspective matrix file not found for camera {camera_index}. Please calibrate the cameras first.")
+            exit(1)
+    return perspective_matrices
+
+
 class KalmanFilter:
     def __init__(self, dt, u_x, u_y, std_acc, x_std_meas, y_std_meas):
         self.dt = dt
@@ -168,9 +249,12 @@ def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
 
 
 def main():
-    cam_R = initialize_camera(4)
-    cam_L = initialize_camera(6)
-    cam_C = initialize_camera(8)
+    global dartboard_image, score_images, perspective_matrices
+
+    perspective_matrices = load_perspective_matrices()
+    cam_R = initialize_camera(0)
+    cam_L = initialize_camera(1)
+    cam_C = initialize_camera(2)
 
     # Read first image twice to start loop
     _, _ = cam2gray(cam_R, flip=True)
@@ -196,6 +280,10 @@ def main():
     kalman_filter_R = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
     kalman_filter_L = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
     kalman_filter_C = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
+
+    camera_scores = [None] * NUM_CAMERAS  # Initialize camera_scores list
+    majority_score = None
+    dart_coordinates = None
 
     takeout_threshold = 20000
     takeout_delay = 1.0
@@ -275,6 +363,52 @@ def main():
                 locationofdart_L, prev_tip_point_L = getRealLocation(corners_final_L, "left", prev_tip_point_L, blur_L, kalman_filter_L)
                 locationofdart_C, prev_tip_point_C = getRealLocation(corners_final_C, "center", prev_tip_point_C, blur_C, kalman_filter_C)
 
+                for camera_index, locationofdart in enumerate([locationofdart_R, locationofdart_L, locationofdart_C]):
+                    print("ggaa")
+                    if isinstance(locationofdart, tuple) and len(locationofdart) == 2:
+                        print(f"sssss: {locationofdart}")
+                        x, y = locationofdart
+                        print(f"x: {x}")
+                        score = calculate_score_from_coordinates(x, y, camera_index)
+                        print(f"Camera {camera_index} - Dart Location: {locationofdart}, Score: {score}")
+
+                        # Store the score in the camera_scores list
+                        camera_scores[camera_index] = score
+
+                print("Camera111")
+                final_score = None
+                score_counts = {}
+                for score in camera_scores:
+                    if score is not None:
+                        if score in score_counts:
+                            score_counts[score] += 1
+                        else:
+                            score_counts[score] = 1
+
+                print("Camera12211")
+                if score_counts:
+                    final_score = max(score_counts, key=score_counts.get)
+                    majority_score = final_score
+
+                    # Find the camera with the majority score
+                    majority_camera_index = camera_scores.index(final_score)
+                    dart_coordinates = (locationofdart_R, locationofdart_L, locationofdart_C)[majority_camera_index]
+
+                    # Transform the dart coordinates to match the drawn dartboard
+                    if dart_coordinates is not None:
+                        x, y = dart_coordinates
+                        inverse_matrix = cv2.invert(perspective_matrices[majority_camera_index])[1]
+                        transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
+                        dart_coordinates = tuple(map(int, transformed_coords))
+                print("faasdf")
+
+                if final_score is not None:
+                    print(f"Final Score (Majority Rule): {final_score}")
+                else:
+                    print("No majority score found.")
+
+
+
                 success_R, tt_R = cam_R.read()
                 success_L, tt_L = cam_L.read()
                 success_C, tt_C = cam_C.read()
@@ -302,11 +436,24 @@ def main():
 
             except Exception as e:
                 print(f"Something went wrong in finding the dart's location: {str(e)}")
-                continue
+                break
+                #continue
 
             cv2.imshow("Dart Detection - Right", tt_R)
             cv2.imshow("Dart Detection - Left", tt_L)
             cv2.imshow("Dart Detection - Center", tt_C)
+            
+            if camera_scores[0] is not None:
+                cv2.putText(tt_R, f"Score: {camera_scores[0]}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv2.imwrite("images/tt_R.jpg", tt_R)
+
+            if camera_scores[1] is not None:
+                cv2.putText(tt_L, f"Score: {camera_scores[1]}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv2.imwrite("images/tt_L.jpg", tt_L)
+
+            if camera_scores[2] is not None:
+                cv2.putText(tt_C, f"Score: {camera_scores[2]}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv2.imwrite("images/tt_C.jpg", tt_C)
 
             # Update the reference frames after a dart has been detected
             success, t_R = cam2gray(cam_R, flip=True)
