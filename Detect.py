@@ -6,6 +6,7 @@ import math
 from shapely.geometry import Point, LineString, Polygon
 import shapely
 import logging
+import csv
 
 NUM_CAMERAS = 3
 IMAGE_WIDTH = 1280
@@ -24,6 +25,22 @@ dartboard_image = None
 score_images = None
 perspective_matrices = []
 center = (IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2)
+
+
+# Function to initialize CSV file
+def setup_csv():
+    with open('darts_data_log.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        # Define your headers here
+        headers = ['Timestamp', 'Event', 'Camera Index', 'X Coordinate', 'Y Coordinate', 'Score', 'Error']
+        writer.writerow(headers)
+
+
+# Function to log data to the CSV
+def log_to_csv(data):
+    with open('darts_data_log.csv', mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(data)
 
 
 def cam2gray(cam, flip=False):
@@ -108,13 +125,12 @@ def getRealLocation(corners_final, mount, prev_tip_point=None, blur=None, kalman
     
     return locationofdart, dart_tip
 
-
+"""
 def calculate_score(distance, angle):
     if angle < 0:
         angle += 2 * np.pi
     sector_scores = [10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6]
     sector_index = int(angle / (2 * np.pi) * 20)
-    print(f"Sector index: {sector_index}")
     base_score = sector_scores[sector_index]
     if distance <= BULLSEYE_RADIUS_PX:
         return 50
@@ -128,24 +144,65 @@ def calculate_score(distance, angle):
         return base_score
     else:
         return 0
+"""
 
+def calculate_score(distance, angle):
+    if angle < 0:
+        angle += 2 * np.pi
+    sector_scores = [10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6]
+    sector_index = int(angle / (2 * np.pi) * 20)
+    base_score = sector_scores[sector_index]
+    description = ""
 
+    if distance <= BULLSEYE_RADIUS_PX:
+        score = 50
+        description = "Bullseye"
+    elif distance <= OUTER_BULL_RADIUS_PX:
+        score = 25
+        description = "Outer Bull"
+    elif TRIPLE_RING_INNER_RADIUS_PX < distance <= TRIPLE_RING_OUTER_RADIUS_PX:
+        score = base_score * 3
+        description = f"{base_score} (Triple)"
+    elif DOUBLE_RING_INNER_RADIUS_PX < distance <= DOUBLE_RING_OUTER_RADIUS_PX:
+        score = base_score * 2
+        description = f"{base_score} (Double)"
+    elif distance <= DOUBLE_RING_OUTER_RADIUS_PX:
+        score = base_score
+        description = str(base_score)
+    else:
+        score = 0
+        description = "Miss"
+
+    return score, description
+
+"""
 def calculate_score_from_coordinates(x, y, camera_index):
     inverse_matrix = cv2.invert(perspective_matrices[camera_index])[1]
-    print(f"Inverse matrix: {inverse_matrix}")
     transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
-    print(f"Transformed coordinates: {transformed_coords}")
     transformed_x, transformed_y = transformed_coords
-
-    print(f"Transformed coordinates: ({transformed_x}, {transformed_y})")
     dx = transformed_x - center[0]
     dy = transformed_y - center[1]
     distance_from_center = math.sqrt(dx**2 + dy**2)
-    print(f"Distance from center: {distance_from_center}")
     angle = math.atan2(dy, dx)
-    print(f"Angle: {angle}")
+
+    logging.debug(f"Camera {camera_index} - Transformed coordinates: ({transformed_x}, {transformed_y}), Distance from center: {distance_from_center}, Angle: {angle}")
     score = calculate_score(distance_from_center, angle)
     return score
+"""
+
+def calculate_score_from_coordinates(x, y, camera_index):
+    inverse_matrix = cv2.invert(perspective_matrices[camera_index])[1]
+    transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
+    transformed_x, transformed_y = transformed_coords
+    dx = transformed_x - center[0]
+    dy = transformed_y - center[1]
+    distance_from_center = math.sqrt(dx**2 + dy**2)
+    angle = math.atan2(dy, dx)
+
+    score, description = calculate_score(distance_from_center, angle)
+    logging.debug(f"Camera {camera_index} - Transformed coordinates: ({transformed_x}, {transformed_y}), Distance from center: {distance_from_center}, Angle: {angle}, Score: {score}, Zone: {description}")
+    return score, description
+
 
 
 def load_perspective_matrices():
@@ -156,7 +213,7 @@ def load_perspective_matrices():
             matrix = data['matrix']
             perspective_matrices.append(matrix)
         except FileNotFoundError:
-            print(f"Perspective matrix file not found for camera {camera_index}. Please calibrate the cameras first.")
+            logging.error(f"Perspective matrix file not found for camera {camera_index}. Please calibrate the cameras first.")
             exit(1)
     return perspective_matrices
 
@@ -207,6 +264,9 @@ def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
 def main():
     global dartboard_image, score_images, perspective_matrices
 
+    # Set up logging
+    logging.basicConfig(filename='darts_detection_log.txt', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
     perspective_matrices = load_perspective_matrices()
     cam_R = initialize_camera(0)
     cam_L = initialize_camera(1)
@@ -236,6 +296,7 @@ def main():
     kalman_filter_C = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
 
     camera_scores = [None] * NUM_CAMERAS
+    descriptions = [None] * NUM_CAMERAS
     majority_score = None
     dart_coordinates = None
 
@@ -278,7 +339,7 @@ def main():
             corners_C = getCorners(blur_C)
 
             if corners_R.size < 40 and corners_L.size < 40 and corners_C.size < 40:
-                print("### dart not detected")
+                logging.warning("### dart not detected")
                 continue
 
             success_R, ttt_R = cam_R.read()
@@ -292,7 +353,7 @@ def main():
             corners_f_C = filterCorners(corners_C, "c", ttt_C)
 
             if corners_f_R.size < 30 and corners_f_L.size < 30 and corners_f_C.size < 30:
-                print("### dart not detected")
+                logging.warning("### dart not detected")
                 continue
 
             rows, cols = blur_R.shape[:2]
@@ -304,13 +365,10 @@ def main():
             _, thresh_L = cv2.threshold(blur_L, 60, 255, 0)
             _, thresh_C = cv2.threshold(blur_C, 60, 255, 0)
 
-            print(f"thresh r:{cv2.countNonZero(thresh_R)} l:{cv2.countNonZero(thresh_L)} c:{cv2.countNonZero(thresh_C)}")
+            logging.info(f"New frame processed, thresholds - R: {cv2.countNonZero(thresh_R)} L: {cv2.countNonZero(thresh_L)} C: {cv2.countNonZero(thresh_C)}")
 
             if cv2.countNonZero(thresh_R) > 15000 or cv2.countNonZero(thresh_L) > 15000 or cv2.countNonZero(thresh_C) > 15000:
                 continue
-
-            print("Dart detected")
-            logging.debug(f'Processing frame at time: {time.time()}')
 
             try:
                 locationofdart_R, prev_tip_point_R = getRealLocation(corners_final_R, "right", prev_tip_point_R, blur_R, kalman_filter_R)
@@ -319,12 +377,16 @@ def main():
 
                 for camera_index, locationofdart in enumerate([locationofdart_R, locationofdart_L, locationofdart_C]):
                     if isinstance(locationofdart, tuple) and len(locationofdart) == 2:
-                        print(f"Camera {camera_index} - Dart Location: {locationofdart}")
                         x, y = locationofdart
-                        print(f"x: {x}, y: {y}")
+                        """
                         score = calculate_score_from_coordinates(x, y, camera_index)
-                        print(f"Camera {camera_index} - Dart Location: {locationofdart}, Score: {score}")
+                        logging.info(f"Camera {camera_index} - Dart Location: {locationofdart}, Score: {score}")
+                        """
+                        score, description = calculate_score_from_coordinates(x, y, camera_index)
+                        logging.info(f"Camera {camera_index} - Dart Location: {locationofdart}, Score: {score} ({description})")
+
                         camera_scores[camera_index] = score
+                        descriptions[camera_index] = description
 
                 final_score = None
                 score_counts = {}
@@ -340,10 +402,12 @@ def main():
                     majority_score = final_score
 
                     majority_camera_index = camera_scores.index(final_score)
+                    final_description = descriptions[majority_camera_index]
                     dart_coordinates = (locationofdart_R, locationofdart_L, locationofdart_C)[majority_camera_index]
 
                     if dart_coordinates is not None:
                         x, y = dart_coordinates
+                        logging.info(f'Dart detected at coordinates: {x}, {y} with score: {final_score}')
                         inverse_matrix = cv2.invert(perspective_matrices[majority_camera_index])[1]
                         transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
                         dart_coordinates = tuple(map(int, transformed_coords))
@@ -354,9 +418,10 @@ def main():
                 
                 
                 if final_score is not None:
-                    print(f"Final Score (Majority Rule): {final_score}")
+                    logging.info(f"Final Score (Majority Rule): {final_score} ({final_description})")
+                    print(f"Final Score: {final_score} ({final_description})")
                 else:
-                    print("No majority score found.")
+                    logging.info("No majority score found.")
 
                 success_R, tt_R = cam_R.read()
                 success_L, tt_L = cam_L.read()
@@ -365,26 +430,23 @@ def main():
                 tt_L = cv2.flip(tt_L, 0)
 
                 if not (success_R and success_L and success_C):
-                    print("Failed to read one or more camera frames.")
+                    logging.error("Failed to read one or more camera frames.")
                     continue
 
                 if isinstance(locationofdart_R, tuple) and len(locationofdart_R) == 2:
                     cv2.circle(tt_R, locationofdart_R, 10, (255, 255, 255), 2, 8)
                     cv2.circle(tt_R, locationofdart_R, 2, (0, 255, 0), 2, 8)
-                    print(f"Right Camera - Dart Location: {locationofdart_R}")
 
                 if isinstance(locationofdart_L, tuple) and len(locationofdart_L) == 2:
                     cv2.circle(tt_L, locationofdart_L, 10, (255, 255, 255), 2, 8)
                     cv2.circle(tt_L, locationofdart_L, 2, (0, 255, 0), 2, 8)
-                    print(f"Left Camera - Dart Location: {locationofdart_L}")
 
                 if isinstance(locationofdart_C, tuple) and len(locationofdart_C) == 2:
                     cv2.circle(tt_C, locationofdart_C, 10, (255, 255, 255), 2, 8)
                     cv2.circle(tt_C, locationofdart_C, 2, (0, 255, 0), 2, 8)
-                    print(f"Center Camera - Dart Location: {locationofdart_C}")
 
             except Exception as e:
-                print(f"Something went wrong in finding the dart's location: {str(e)}")
+                logging.error(f"Something went wrong in finding the dart's location: {str(e)}")
                 break
 
             cv2.imshow("Dart Detection - Right", tt_R)
@@ -410,6 +472,7 @@ def main():
         else:
             if cv2.countNonZero(thresh_R) > takeout_threshold or cv2.countNonZero(thresh_L) > takeout_threshold or cv2.countNonZero(thresh_C) > takeout_threshold:
                 print("Takeout procedure initiated.")
+                logging.info("Takeout procedure initiated.")
                 prev_tip_point_R = None
                 prev_tip_point_L = None
                 prev_tip_point_C = None
@@ -422,6 +485,7 @@ def main():
                     time.sleep(0.1)
 
                 print("Takeout procedure completed.")
+                logging.info("Takeout procedure completed.")
 
         if cv2.waitKey(10) == 113:
             break
@@ -430,6 +494,7 @@ def main():
     cam_L.release()
     cam_C.release()
     cv2.destroyAllWindows()
+    logging.info('Application end')
 
 
 def draw_point_at_angle(image, center, angle_degrees, radius, color, point_radius):
