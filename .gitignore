@@ -1,4 +1,11 @@
+# Ignore the virtual environment directory (venv)
 venv/
+
+# Ignore the images directory where images are stored
 images/
+
+# Ignore all __pycache__ directories, which store Python bytecode
 **/__pycache__/
+
+# Ignore camera calibration files with names like 'camera_calibration_0.npz', 'camera_calibration_1.npz', etc.
 camera_calibration_*.npz
