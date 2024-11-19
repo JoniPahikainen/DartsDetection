@@ -6,25 +6,17 @@ import math
 from shapely.geometry import Polygon
 import logging
 import csv
-
-NUM_CAMERAS = 3
-IMAGE_WIDTH = 1280
-IMAGE_HEIGHT = 720
-DARTBOARD_DIAMETER_MM = 451
-DOUBLE_RING_OUTER_RADIUS_MM = 170
-
-BULLSEYE_RADIUS_MM = 6.35
-OUTER_BULL_RADIUS_MM = 15.9
-TRIPLE_RING_INNER_RADIUS_MM = 99
-TRIPLE_RING_OUTER_RADIUS_MM = 107
-DOUBLE_RING_INNER_RADIUS_MM = 162
-DOUBLE_RING_OUTER_RADIUS_MM = 170
+from dartboard_utils import draw_dartboard
+from config import (
+    NUM_CAMERAS, IMAGE_WIDTH, IMAGE_HEIGHT, DARTBOARD_DIAMETER_MM, BULLSEYE_RADIUS_PX, OUTER_BULL_RADIUS_PX,
+    TRIPLE_RING_INNER_RADIUS_PX, TRIPLE_RING_OUTER_RADIUS_PX, DOUBLE_RING_INNER_RADIUS_PX, DOUBLE_RING_OUTER_RADIUS_PX,
+    CENTER
+)
 
 dartboard_image = None
 score_images = None
 perspective_matrices = []
-center = (IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2)
-
+dartboard_image = draw_dartboard(dartboard_image, IMAGE_HEIGHT, IMAGE_WIDTH, DARTBOARD_DIAMETER_MM, CENTER)
 
 # Function to initialize CSV file
 def setup_csv():
@@ -161,8 +153,8 @@ def calculate_score_from_coordinates(x, y, camera_index):
     inverse_matrix = cv2.invert(perspective_matrices[camera_index])[1]
     transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
     transformed_x, transformed_y = transformed_coords
-    dx = transformed_x - center[0]
-    dy = transformed_y - center[1]
+    dx = transformed_x - CENTER[0]
+    dy = transformed_y - CENTER[1]
     distance_from_center = math.sqrt(dx**2 + dy**2)
     angle = math.atan2(dy, dx)
 
@@ -471,75 +463,5 @@ def main():
     logging.info('Application end')
 
 
-def draw_point_at_angle(image, center, angle_degrees, radius, color, point_radius):
-    angle_radians = np.radians(angle_degrees)
-    x = int(center[0] + radius * np.cos(angle_radians))
-    y = int(center[1] - radius * np.sin(angle_radians))
-    cv2.circle(image, (x, y), point_radius, color, -1)
-
-def draw_segment_text(image, center, start_angle, end_angle, radius, text):
-    angle = (start_angle + end_angle) / 2
-    text_x = int(center[0] + radius * np.cos(angle))
-    text_y = int(center[1] + radius * np.sin(angle))
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.5
-    font_thickness = 1
-    text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
-    text_origin = (text_x - text_size[0] // 2, text_y + text_size[1] // 2)
-    cv2.putText(image, text, text_origin, font, font_scale, (0, 255, 0), font_thickness, cv2.LINE_AA)
-    
-def draw_dartboard():
-    global dartboard_image, PIXELS_PER_MM, BULLSEYE_RADIUS_PX, OUTER_BULL_RADIUS_PX, TRIPLE_RING_INNER_RADIUS_PX, TRIPLE_RING_OUTER_RADIUS_PX, DOUBLE_RING_INNER_RADIUS_PX, DOUBLE_RING_OUTER_RADIUS_PX
-
-    # Calculate the conversion factor from mm to pixels
-    PIXELS_PER_MM = IMAGE_HEIGHT / DARTBOARD_DIAMETER_MM
-
-    # Convert mm to pixels
-    BULLSEYE_RADIUS_PX = int(BULLSEYE_RADIUS_MM * PIXELS_PER_MM)
-    OUTER_BULL_RADIUS_PX = int(OUTER_BULL_RADIUS_MM * PIXELS_PER_MM)
-    TRIPLE_RING_INNER_RADIUS_PX = int(TRIPLE_RING_INNER_RADIUS_MM * PIXELS_PER_MM)
-    TRIPLE_RING_OUTER_RADIUS_PX = int(TRIPLE_RING_OUTER_RADIUS_MM * PIXELS_PER_MM)
-    DOUBLE_RING_INNER_RADIUS_PX = int(DOUBLE_RING_INNER_RADIUS_MM * PIXELS_PER_MM)
-    DOUBLE_RING_OUTER_RADIUS_PX = int(DOUBLE_RING_OUTER_RADIUS_MM * PIXELS_PER_MM)
-
-    # Create a blank image with white background
-    dartboard_image = np.ones((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=np.uint8) * 255
-
-    # Draw the bullseye and rings
-    cv2.circle(dartboard_image, center, BULLSEYE_RADIUS_PX, (0, 0, 0), -1, lineType=cv2.LINE_AA)  # Bullseye
-    cv2.circle(dartboard_image, center, OUTER_BULL_RADIUS_PX, (255, 0, 0), 2, lineType=cv2.LINE_AA)  # Outer bull
-    cv2.circle(dartboard_image, center, TRIPLE_RING_INNER_RADIUS_PX, (0, 255, 0), 2, lineType=cv2.LINE_AA)  # Inner triple
-    cv2.circle(dartboard_image, center, TRIPLE_RING_OUTER_RADIUS_PX, (0, 255, 0), 2, lineType=cv2.LINE_AA)  # Outer triple
-    cv2.circle(dartboard_image, center, DOUBLE_RING_INNER_RADIUS_PX, (0, 0, 255), 2, lineType=cv2.LINE_AA)  # Inner double
-    cv2.circle(dartboard_image, center, DOUBLE_RING_OUTER_RADIUS_PX, (0, 0, 255), 2, lineType=cv2.LINE_AA)  # Outer double
-
-    # Draw the sector lines
-    for angle in np.linspace(0, 2 * np.pi, 21)[:-1]:
-        start_x = int(center[0] + np.cos(angle) * DOUBLE_RING_OUTER_RADIUS_PX)
-        start_y = int(center[1] + np.sin(angle) * DOUBLE_RING_OUTER_RADIUS_PX)
-        end_x = int(center[0] + np.cos(angle) * OUTER_BULL_RADIUS_PX)
-        end_y = int(center[1] + np.sin(angle) * OUTER_BULL_RADIUS_PX)
-        cv2.line(dartboard_image, (start_x, start_y), (end_x, end_y), (0, 0, 0), 1, lineType=cv2.LINE_AA)
-
-    text_radius_px = int((TRIPLE_RING_OUTER_RADIUS_PX + DOUBLE_RING_INNER_RADIUS_PX) / 2)
-
-    sector_scores = [10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6]
-    for i, score in enumerate(sector_scores):
-        start_angle = (i * 360 / 20 - 0) * np.pi / 180
-        end_angle = ((i + 1) * 360 / 20 - 0) * np.pi / 180
-        draw_segment_text(dartboard_image, center, start_angle, end_angle, text_radius_px, str(score))
-
-    sector_intersections = {
-        '20_1': 0,
-        '6_10': 90,
-        '19_3': 180,
-        '11_14': 270,
-    }
-
-    for angle in sector_intersections.values():
-        draw_point_at_angle(dartboard_image, center, angle, DOUBLE_RING_OUTER_RADIUS_PX, (255, 0, 0), 5)
-
-
 if __name__ == "__main__":
-    draw_dartboard()
     main() 
