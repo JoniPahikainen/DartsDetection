@@ -8,15 +8,15 @@ import logging
 import csv
 from dartboard_utils import draw_dartboard
 from config import (
-    NUM_CAMERAS, IMAGE_WIDTH, IMAGE_HEIGHT, DARTBOARD_DIAMETER_MM, BULLSEYE_RADIUS_PX, OUTER_BULL_RADIUS_PX,
-    TRIPLE_RING_INNER_RADIUS_PX, TRIPLE_RING_OUTER_RADIUS_PX, DOUBLE_RING_INNER_RADIUS_PX, DOUBLE_RING_OUTER_RADIUS_PX,
-    CENTER
+    NUMBER_OF_CAMERAS, FRAME_WIDTH_PIXELS, FRAME_HEIGHT_PIXELS, DARTBOARD_DIAMETER_MM, BULLSEYE_RADIUS_PIXELS, OUTER_BULLSEYE_RADIUS_PIXELS,
+    TRIPLE_RING_INNER_RADIUS_PIXELS, TRIPLE_RING_OUTER_RADIUS_PIXELS, DOUBLE_RING_INNER_RADIUS_PIXELS, DOUBLE_RING_OUTER_RADIUS_PIXELS,
+    DARTBOARD_CENTER_COORDS
 )
 
 dartboard_image = None
 score_images = None
 perspective_matrices = []
-dartboard_image = draw_dartboard(dartboard_image, IMAGE_HEIGHT, IMAGE_WIDTH, DARTBOARD_DIAMETER_MM, CENTER)
+dartboard_image = draw_dartboard(dartboard_image, FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, DARTBOARD_DIAMETER_MM, DARTBOARD_CENTER_COORDS)
 
 # Function to initialize CSV file
 def setup_csv():
@@ -127,19 +127,19 @@ def calculate_score(distance, angle):
     base_score = sector_scores[sector_index]
     description = ""
 
-    if distance <= BULLSEYE_RADIUS_PX:
+    if distance <= BULLSEYE_RADIUS_PIXELS:
         score = 50
         description = "Bullseye"
-    elif distance <= OUTER_BULL_RADIUS_PX:
+    elif distance <= OUTER_BULLSEYE_RADIUS_PIXELS:
         score = 25
         description = "Outer Bull"
-    elif TRIPLE_RING_INNER_RADIUS_PX < distance <= TRIPLE_RING_OUTER_RADIUS_PX:
+    elif TRIPLE_RING_INNER_RADIUS_PIXELS < distance <= TRIPLE_RING_OUTER_RADIUS_PIXELS:
         score = base_score * 3
         description = f"{base_score} (Triple)"
-    elif DOUBLE_RING_INNER_RADIUS_PX < distance <= DOUBLE_RING_OUTER_RADIUS_PX:
+    elif DOUBLE_RING_INNER_RADIUS_PIXELS < distance <= DOUBLE_RING_OUTER_RADIUS_PIXELS:
         score = base_score * 2
         description = f"{base_score} (Double)"
-    elif distance <= DOUBLE_RING_OUTER_RADIUS_PX:
+    elif distance <= DOUBLE_RING_OUTER_RADIUS_PIXELS:
         score = base_score
         description = str(base_score)
     else:
@@ -153,8 +153,8 @@ def calculate_score_from_coordinates(x, y, camera_index):
     inverse_matrix = cv2.invert(perspective_matrices[camera_index])[1]
     transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
     transformed_x, transformed_y = transformed_coords
-    dx = transformed_x - CENTER[0]
-    dy = transformed_y - CENTER[1]
+    dx = transformed_x - DARTBOARD_CENTER_COORDS[0]
+    dy = transformed_y - DARTBOARD_CENTER_COORDS[1]
     distance_from_center = math.sqrt(dx**2 + dy**2)
     angle = math.atan2(dy, dx)
 
@@ -177,7 +177,7 @@ def calculate_score_from_coordinates(x, y, camera_index):
 
 def load_perspective_matrices():
     perspective_matrices = []
-    for camera_index in range(NUM_CAMERAS):
+    for camera_index in range(NUMBER_OF_CAMERAS):
         try:
             data = np.load(f'camera_calibration_{camera_index}.npz')
             matrix = data['matrix']
@@ -234,7 +234,6 @@ def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
 def main():
     global dartboard_image, score_images, perspective_matrices
 
-    # Set up logging
     logging.basicConfig(filename='darts_detection_log.txt', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
     perspective_matrices = load_perspective_matrices()
@@ -242,10 +241,6 @@ def main():
     cam_L = initialize_camera(1)
     cam_C = initialize_camera(2)
 
-    _, _ = cam2gray(cam_R, flip=True)
-    _, _ = cam2gray(cam_L, flip=True)
-    _, _ = cam2gray(cam_C, flip=False)
-    time.sleep(0.1)
     success, t_R = cam2gray(cam_R, flip=True)
     _, t_L = cam2gray(cam_L, flip=True)
     _, t_C = cam2gray(cam_C, flip=False)
@@ -265,8 +260,8 @@ def main():
     kalman_filter_L = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
     kalman_filter_C = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
 
-    camera_scores = [None] * NUM_CAMERAS
-    descriptions = [None] * NUM_CAMERAS
+    camera_scores = [None] * NUMBER_OF_CAMERAS
+    descriptions = [None] * NUMBER_OF_CAMERAS
     majority_score = None
     dart_coordinates = None
 
@@ -275,15 +270,12 @@ def main():
 
     dartboard_image_copy = dartboard_image.copy()
 
+    print("Starting dart detection...")
     while success:
         time.sleep(0.1)
         thresh_R = getThreshold(cam_R, t_R, flip=True)
         thresh_L = getThreshold(cam_L, t_L, flip=True)
         thresh_C = getThreshold(cam_C, t_C, flip=False)
-
-        cv2.imshow("Dart Detection - thresh_R", thresh_R)
-        cv2.imshow("Dart Detection - thresh_L", thresh_L)
-        cv2.imshow("Dart Detection - thresh_C", thresh_C)
 
         if (cv2.countNonZero(thresh_R) > 500 and cv2.countNonZero(thresh_R) < 7500) or (cv2.countNonZero(thresh_L) > 500 and cv2.countNonZero(thresh_L) < 7500) or (cv2.countNonZero(thresh_C) > 500 and cv2.countNonZero(thresh_C) < 7500):
 
