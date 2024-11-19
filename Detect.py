@@ -3,8 +3,7 @@ import cv2
 import time
 import numpy as np
 import math
-from shapely.geometry import Point, LineString, Polygon
-import shapely
+from shapely.geometry import Polygon
 import logging
 import csv
 
@@ -31,8 +30,10 @@ center = (IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2)
 def setup_csv():
     with open('darts_data_log.csv', mode='w', newline='') as file:
         writer = csv.writer(file)
-        # Define your headers here
-        headers = ['Timestamp', 'Event', 'Camera Index', 'X Coordinate', 'Y Coordinate', 'Score', 'Error']
+        headers = [
+            'Timestamp', 'Camera Index', 'X Coordinate', 'Y Coordinate', 'Transformed X', 'Transformed Y',
+            'Distance from Center', 'Angle', 'Score', 'Zone', 'Majority Score', 'Majority Zone'
+        ]
         writer.writerow(headers)
 
 
@@ -125,26 +126,6 @@ def getRealLocation(corners_final, mount, prev_tip_point=None, blur=None, kalman
     
     return locationofdart, dart_tip
 
-"""
-def calculate_score(distance, angle):
-    if angle < 0:
-        angle += 2 * np.pi
-    sector_scores = [10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6]
-    sector_index = int(angle / (2 * np.pi) * 20)
-    base_score = sector_scores[sector_index]
-    if distance <= BULLSEYE_RADIUS_PX:
-        return 50
-    elif distance <= OUTER_BULL_RADIUS_PX:
-        return 25
-    elif TRIPLE_RING_INNER_RADIUS_PX < distance <= TRIPLE_RING_OUTER_RADIUS_PX:
-        return base_score * 3
-    elif DOUBLE_RING_INNER_RADIUS_PX < distance <= DOUBLE_RING_OUTER_RADIUS_PX:
-        return base_score * 2
-    elif distance <= DOUBLE_RING_OUTER_RADIUS_PX:
-        return base_score
-    else:
-        return 0
-"""
 
 def calculate_score(distance, angle):
     if angle < 0:
@@ -175,20 +156,6 @@ def calculate_score(distance, angle):
 
     return score, description
 
-"""
-def calculate_score_from_coordinates(x, y, camera_index):
-    inverse_matrix = cv2.invert(perspective_matrices[camera_index])[1]
-    transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
-    transformed_x, transformed_y = transformed_coords
-    dx = transformed_x - center[0]
-    dy = transformed_y - center[1]
-    distance_from_center = math.sqrt(dx**2 + dy**2)
-    angle = math.atan2(dy, dx)
-
-    logging.debug(f"Camera {camera_index} - Transformed coordinates: ({transformed_x}, {transformed_y}), Distance from center: {distance_from_center}, Angle: {angle}")
-    score = calculate_score(distance_from_center, angle)
-    return score
-"""
 
 def calculate_score_from_coordinates(x, y, camera_index):
     inverse_matrix = cv2.invert(perspective_matrices[camera_index])[1]
@@ -200,7 +167,18 @@ def calculate_score_from_coordinates(x, y, camera_index):
     angle = math.atan2(dy, dx)
 
     score, description = calculate_score(distance_from_center, angle)
-    logging.debug(f"Camera {camera_index} - Transformed coordinates: ({transformed_x}, {transformed_y}), Distance from center: {distance_from_center}, Angle: {angle}, Score: {score}, Zone: {description}")
+    logging.debug(f"Camera {camera_index} -Dart location: ({x}, {y}) Transformed coordinates: ({transformed_x}, {transformed_y}), Distance from center: {distance_from_center}, Angle: {angle}, Score: {score}, Zone: {description}")
+    
+    log_to_csv([
+        time.strftime('%Y-%m-%d %H:%M:%S'),  # Timestamp
+        camera_index,                        # Camera index
+        x, y,                                # Original coordinates
+        transformed_x, transformed_y,        # Transformed coordinates
+        distance_from_center, angle,         # Distance and angle
+        score, description,                  # Score and zone description
+        None, None                           # Placeholder for majority score and zone
+    ])
+
     return score, description
 
 
@@ -375,15 +353,11 @@ def main():
                 locationofdart_L, prev_tip_point_L = getRealLocation(corners_final_L, "left", prev_tip_point_L, blur_L, kalman_filter_L)
                 locationofdart_C, prev_tip_point_C = getRealLocation(corners_final_C, "center", prev_tip_point_C, blur_C, kalman_filter_C)
 
+
                 for camera_index, locationofdart in enumerate([locationofdart_R, locationofdart_L, locationofdart_C]):
                     if isinstance(locationofdart, tuple) and len(locationofdart) == 2:
                         x, y = locationofdart
-                        """
-                        score = calculate_score_from_coordinates(x, y, camera_index)
-                        logging.info(f"Camera {camera_index} - Dart Location: {locationofdart}, Score: {score}")
-                        """
                         score, description = calculate_score_from_coordinates(x, y, camera_index)
-                        logging.info(f"Camera {camera_index} - Dart Location: {locationofdart}, Score: {score} ({description})")
 
                         camera_scores[camera_index] = score
                         descriptions[camera_index] = description
