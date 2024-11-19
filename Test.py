@@ -11,6 +11,7 @@ if not os.path.exists(image_folder):
 else:
     print(f"Folder '{image_folder}' already exists.")
 
+
 def test_cameras(save=False):
     open = []
     for i in range(10):
@@ -21,7 +22,7 @@ def test_cameras(save=False):
                 print(f"Camera {i} is working, saving frame as camera_{i}_image.jpg")
                 open.append(i)
                 if save:
-                    cv2.imwrite(f'images/test/camera_{i}_image.jpg', frame)  # Save the frame instead of showing it
+                    cv2.imwrite(f'images/camera_{i}_image.jpg', frame)
             else:
                 print(f"Camera {i} could not capture a frame.")
         else:
@@ -44,16 +45,13 @@ def test_canny(camera_number, width=1280, height=720):
     if not ret:
         print(f"No ret on camera {camera_number}.")
         return None
-    
-    # Convert to grayscale
+
     img_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     cv2.imwrite(f'{image_folder}/test/camera_gray_{camera_number}_image.jpg', img_gray)
 
-    # Apply Gaussian blur
     img_blur = cv2.GaussianBlur(img_gray, (3, 3), 0)
     cv2.imwrite(f'{image_folder}/test/camera_blur_{camera_number}_image.jpg', img_blur)
 
-    # Apply Canny Edge Detection with different thresholds
     threshold_values = [(100, 200), (150, 250), (200, 300)]
 
     for i, (t1, t2) in enumerate(threshold_values):
@@ -61,7 +59,6 @@ def test_canny(camera_number, width=1280, height=720):
         cv2.imwrite(f'{image_folder}/test/camera_edges_{camera_number}_t{t1}_t{t2}_image.jpg', edges)
         print(f'Saved edges with thresholds {t1} and {t2}')
 
-    # Apply Canny without blur
     edges_no_blur = cv2.Canny(image=img_gray, threshold1=150, threshold2=250)
     cv2.imwrite(f'{image_folder}/test/camera_edges_no_blur_{camera_number}_image.jpg', edges_no_blur)
     print(f'Saved edges without blur for camera {camera_number}')
@@ -70,7 +67,6 @@ def test_canny(camera_number, width=1280, height=720):
 
 
 def test_other(camera_number, width=1280, height=720):
-    # Open the camera
     camera = cv2.VideoCapture(camera_number)
     if not camera.isOpened():
         print(f"Camera {camera_number} failed to open.")
@@ -86,58 +82,43 @@ def test_other(camera_number, width=1280, height=720):
 
     print("Frame captured, starting processing...")
 
-    # Convert the frame to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     print("Converted to grayscale.")
 
-    # Apply Gaussian blur
     blurred = cv2.GaussianBlur(gray, (9, 9), 0)
     print("Applied Gaussian blur.")
 
-    # Use adaptive thresholding to handle lighting variations
     thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                                    cv2.THRESH_BINARY_INV, 11, 2)
     print("Applied adaptive thresholding.")
 
-    # Apply a series of morphological transformations to remove small noise
     kernel = np.ones((5, 5), np.uint8)
     morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
     print("Applied morphological transformations.")
 
-    # Perform edge detection
     edges = cv2.Canny(morph, 50, 150)
     cv2.imshow("Edge Image", edges)
     print("Performed edge detection.")
 
-    # Find contours in the edge-detected image
     contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     print(f"Found {len(contours)} contours.")
 
-    # Adjust the contour size limits
-    min_area = 5000  # Decrease to capture smaller relevant contours
-    max_area = 500000  # Increase the max size to include larger contours like dartboard
+    min_area = 5000
+    max_area = 500000 
 
-    ellipse_count = 0  # Counter for ellipse images
+    ellipse_count = 0 
 
-    # Process each contour
     for i, cnt in enumerate(contours):
         area = cv2.contourArea(cnt)
-        
-        # Filter based on contour area size
+
         if min_area < area < max_area:
             print(f"Contour {i}: Area {area} - Processing...")
-            if len(cnt) >= 5:  # fitEllipse requires at least 5 points
+            if len(cnt) >= 5:
                 try:
                     ellipse = cv2.fitEllipse(cnt)
                     ellipse_count += 1
-                    
-                    # Make a copy of the frame to draw the ellipse
                     ellipse_img = frame.copy()
-
-                    # Draw the ellipse on the image
                     cv2.ellipse(ellipse_img, ellipse, (255, 0, 0), 2)
-                    
-                    # Save the image
                     file_name = f'camera_{camera_number}_ellipse_{ellipse_count}.jpg'
                     success = cv2.imwrite(file_name, ellipse_img)
 
@@ -146,7 +127,6 @@ def test_other(camera_number, width=1280, height=720):
                     else:
                         print(f"Failed to save {file_name}")
 
-                    # Optionally display the ellipse
                     cv2.imshow(f'Ellipse {ellipse_count}', ellipse_img)
                 except Exception as e:
                     print(f"Error fitting ellipse to contour {i}: {e}")
@@ -155,12 +135,10 @@ def test_other(camera_number, width=1280, height=720):
         else:
             print(f"Contour {i}: Area {area} - Skipped due to size.")
 
-    # Wait for a key press to close windows
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-    # Release the camera
     camera.release()
+
 
 def save_clear(camera_number, width=1280, height=720):
     camera = cv2.VideoCapture(camera_number)
