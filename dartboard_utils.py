@@ -40,11 +40,21 @@ def draw_dartboard(dartboard_image, IMAGE_HEIGHT, IMAGE_WIDTH, DARTBOARD_DIAMETE
         end_y = int(center[1] + np.sin(angle) * OUTER_BULLSEYE_RADIUS_PIXELS)
         cv2.line(dartboard_image, (start_x, start_y), (end_x, end_y), (0, 0, 0), 1, lineType=cv2.LINE_AA)
 
-    text_radius_px = int((TRIPLE_RING_OUTER_RADIUS_PIXELS + TRIPLE_RING_INNER_RADIUS_PIXELS) / 2)
+    text_radius_px = int((TRIPLE_RING_OUTER_RADIUS_PIXELS + DOUBLE_RING_INNER_RADIUS_PIXELS) / 2)
     sector_scores = [10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6]
     for i, score in enumerate(sector_scores):
         start_angle = (i * 360 / 20 - 0) * np.pi / 180
         end_angle = ((i + 1) * 360 / 20 - 0) * np.pi / 180
         draw_segment_text(dartboard_image, center, start_angle, end_angle, text_radius_px, str(score))
+
+    sector_intersections = {
+        '20_1': 0,
+        '6_10': 90,
+        '19_3': 180,
+        '11_14': 270,
+    }
+
+    for angle in sector_intersections.values():
+        draw_point_at_angle(dartboard_image, center, angle, DOUBLE_RING_OUTER_RADIUS_PIXELS, (255, 0, 0), 5)
 
     return dartboard_image
