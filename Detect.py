@@ -20,7 +20,7 @@ dartboard_image = draw_dartboard(dartboard_image, FRAME_HEIGHT_PIXELS, FRAME_WID
 
 # Function to initialize CSV file
 def setup_csv():
-    with open('darts_data_log.csv', mode='w', newline='') as file:
+    with open('darts_data.csv', mode='w', newline='') as file:
         writer = csv.writer(file)
         headers = [
             'Timestamp', 'Camera Index', 'X Coordinate', 'Y Coordinate', 'Transformed X', 'Transformed Y',
@@ -31,7 +31,7 @@ def setup_csv():
 
 # Function to log data to the CSV
 def log_to_csv(data):
-    with open('darts_data_log.csv', mode='a', newline='') as file:
+    with open('darts_data.csv', mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(data)
 
@@ -231,6 +231,26 @@ def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
     return None
 
 
+def perform_takeout(cams, kalman_filters, takeout_delay=1.0):
+    logging.info("Takeout procedure initiated.")
+    print("Takeout procedure initiated.")
+
+    for kf in kalman_filters:
+        kf.x = np.zeros((4, 1))
+        kf.P = np.eye(4)
+
+    start_time = time.time()
+    while time.time() - start_time < takeout_delay:
+        for cam in cams:
+            success, _ = cam2gray(cam)
+            if not success:
+                logging.warning("Camera read failed during takeout.")
+        time.sleep(0.1)
+
+    logging.info("Takeout procedure completed.")
+    print("Takeout procedure completed.")
+
+
 def main():
     global dartboard_image, score_images, perspective_matrices
 
@@ -240,6 +260,7 @@ def main():
     cam_R = initialize_camera(0)
     cam_L = initialize_camera(1)
     cam_C = initialize_camera(2)
+
 
     success, t_R = cam2gray(cam_R, flip=True)
     _, t_L = cam2gray(cam_L, flip=True)
@@ -429,21 +450,11 @@ def main():
 
         else:
             if cv2.countNonZero(thresh_R) > takeout_threshold or cv2.countNonZero(thresh_L) > takeout_threshold or cv2.countNonZero(thresh_C) > takeout_threshold:
-                print("Takeout procedure initiated.")
-                logging.info("Takeout procedure initiated.")
-                prev_tip_point_R = None
-                prev_tip_point_L = None
-                prev_tip_point_C = None
+                perform_takeout([cam_R, cam_L, cam_C], [kalman_filter_R, kalman_filter_L, kalman_filter_C], takeout_delay)
 
-                start_time = time.time()
-                while time.time() - start_time < takeout_delay:
-                    success, t_R = cam2gray(cam_R)
-                    _, t_L = cam2gray(cam_L)
-                    _, t_C = cam2gray(cam_C)
-                    time.sleep(0.1)
-
-                print("Takeout procedure completed.")
-                logging.info("Takeout procedure completed.")
+                success, t_R = cam2gray(cam_R, flip=True)
+                _, t_L = cam2gray(cam_L, flip=True)
+                _, t_C = cam2gray(cam_C, flip=False)
 
         if cv2.waitKey(10) == 113:
             break
