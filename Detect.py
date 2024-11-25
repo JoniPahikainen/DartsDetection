@@ -282,7 +282,10 @@ def correct_score(detected_score, detected_description):
     
     if correction:
         try:
-            if correction.startswith("D"):
+            if correction.lower() == "miss":
+                corrected_score = 0
+                corrected_description = "Miss"
+            elif correction.startswith("D"):
                 corrected_score = int(correction[1:]) * 2
                 corrected_description = f"{correction[1:]} (Double)"
             elif correction.startswith("T"):
@@ -442,24 +445,30 @@ def main():
                         inverse_matrix = cv2.invert(perspective_matrices[majority_camera_index])[1]
                         transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
                         dart_coordinates = tuple(map(int, transformed_coords))
-
-                        x, y = dart_coordinates
-                        cv2.circle(dartboard_image_copy, (int(x), int(y)), 5, (0, 0, 255), -1)
-                        cv2.imwrite("images/dartboard_image_copy.jpg", dartboard_image_copy)
-                
                 
                 if final_score is not None:
                     logging.info(f"Final Score (Majority Rule): {final_score} ({final_description})")
                     print(f"Final Score: {final_score} ({final_description})")
 
                     corrected_score, corrected_description, corrected = correct_score(final_score, final_description)
-            
+
+                    x, y = dart_coordinates
+
                     if corrected is not None:
                         correction_status = "Corrected" if corrected else "Not Corrected"
                         logging.info(f"Score correction: {correction_status}. Final Score: {corrected_score} ({corrected_description})")
                         print(f"Final Score: {corrected_score} ({corrected_description})")
+                        cv2.circle(dartboard_image_copy, (int(x), int(y)), 5, (0, 0, 255), -1)
+                        cv2.imwrite("images/dartboard_image_copy.jpg", dartboard_image_copy)
+
+                    else:
+                        cv2.circle(dartboard_image_copy, (int(x), int(y)), 5, (205, 90, 106), -1)
+                        cv2.imwrite("images/dartboard_image_copy.jpg", dartboard_image_copy)
+                
 
                     dart_data.append({
+                        "detected_score": final_score,
+                        "detected_zone": final_description,
                         "corrected": corrected,
                         "corrected_score": (corrected_score if corrected else score),
                         "corrected_zone": (corrected_description if corrected else description)
