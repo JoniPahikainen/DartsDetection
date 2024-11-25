@@ -6,6 +6,7 @@ import math
 from shapely.geometry import Polygon
 import logging
 import csv
+import json
 from dartboard_utils import draw_dartboard
 from config import (
     NUMBER_OF_CAMERAS, FRAME_WIDTH_PIXELS, FRAME_HEIGHT_PIXELS, DARTBOARD_DIAMETER_MM, BULLSEYE_RADIUS_PIXELS, OUTER_BULLSEYE_RADIUS_PIXELS,
@@ -18,22 +19,43 @@ score_images = None
 perspective_matrices = []
 dartboard_image = draw_dartboard(dartboard_image, FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, DARTBOARD_DIAMETER_MM, DARTBOARD_CENTER_COORDS)
 
-# Function to initialize CSV file
-def setup_csv():
-    with open('darts_data.csv', mode='w', newline='') as file:
-        writer = csv.writer(file)
-        headers = [
-            'Timestamp', 'Camera Index', 'X Coordinate', 'Y Coordinate', 'Transformed X', 'Transformed Y',
-            'Distance from Center', 'Angle', 'Score', 'Zone', 'Majority Score', 'Majority Zone'
-        ]
-        writer.writerow(headers)
+def setup_json():
+    with open('darts_data.json', mode='w') as file:
+        json.dump([], file, indent=4)  # Initialize with an empty list
+
+# Function to log data to the JSON file
+def log_to_json(data):
+    try:
+        # Open the JSON file in read+write mode
+        with open('darts_data.json', mode='r+') as file:
+            try:
+                file_data = json.load(file)  # Load existing data
+            except json.JSONDecodeError:
+                logging.warning("JSON file is corrupted or empty. Resetting the file.")
+                file_data = []  # Reset to an empty list if decoding fails
+            
+            file_data.append(data)  # Append new data
+            file.seek(0)           # Move file pointer to the beginning
+            json.dump(file_data, file, indent=4)  # Write updated data back to the file
+    except FileNotFoundError:
+        logging.warning("JSON file not found. Creating a new file.")
+        setup_json()  # Initialize a new JSON file
+        log_to_json(data)  # Retry logging the data
 
 
-# Function to log data to the CSV
-def log_to_csv(data):
-    with open('darts_data.csv', mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(data)
+# Function to log dart data
+def log_dart_data(timestamp, dart_data=None):
+    if dart_data:
+        # If grouped data is provided, log as a list
+        data = {
+            "timestamp": timestamp,
+            "dart_group": dart_data  # Save all collected data for this detection
+        }
+    else:
+        logging.error("Dart data is missing. Please provide the required data.")
+    
+    # Save to JSON
+    log_to_json(data)
 
 
 def cam2gray(cam, flip=False):
@@ -150,9 +172,10 @@ def calculate_score(distance, angle):
 
 
 def calculate_score_from_coordinates(x, y, camera_index):
+    dd = []
     inverse_matrix = cv2.invert(perspective_matrices[camera_index])[1]
     transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
-    transformed_x, transformed_y = transformed_coords
+    transformed_x, transformed_y = map(float, transformed_coords)
     dx = transformed_x - DARTBOARD_CENTER_COORDS[0]
     dy = transformed_y - DARTBOARD_CENTER_COORDS[1]
     distance_from_center = math.sqrt(dx**2 + dy**2)
@@ -161,18 +184,20 @@ def calculate_score_from_coordinates(x, y, camera_index):
     score, description = calculate_score(distance_from_center, angle)
     logging.debug(f"Camera {camera_index} -Dart location: ({x}, {y}) Transformed coordinates: ({transformed_x}, {transformed_y}), Distance from center: {distance_from_center}, Angle: {angle}, Score: {score}, Zone: {description}")
     
-    log_to_csv([
-        time.strftime('%Y-%m-%d %H:%M:%S'),  # Timestamp
-        camera_index,                        # Camera index
-        x, y,                                # Original coordinates
-        transformed_x, transformed_y,        # Transformed coordinates
-        distance_from_center, angle,         # Distance and angle
-        score, description,                  # Score and zone description
-        None, None                           # Placeholder for majority score and zone
-    ])
 
-    return score, description
+    dd.append({
+            "camera_index": camera_index,
+            "x": x,
+            "y": y,
+            "transformed_x": transformed_x,
+            "transformed_y": transformed_y,
+            "distance_from_center": distance_from_center,
+            "angle": angle,
+            "detected_score": score,
+            "zone": description
+        })
 
+    return score, description, dd
 
 
 def load_perspective_matrices():
@@ -251,9 +276,35 @@ def perform_takeout(cams, kalman_filters, takeout_delay=1.0):
     print("Takeout procedure completed.")
 
 
+def correct_score(detected_score, detected_description):
+    print(f"Detected Score: {detected_score} ({detected_description})")
+    correction = input("Enter corrected score (e.g., D20 for Double 20, S20 for Single 20, or press Enter to keep detected score): ").strip()
+    
+    if correction:
+        try:
+            if correction.startswith("D"):
+                corrected_score = int(correction[1:]) * 2
+                corrected_description = f"{correction[1:]} (Double)"
+            elif correction.startswith("T"):
+                corrected_score = int(correction[1:]) * 3
+                corrected_description = f"{correction[1:]} (Triple)"
+            elif correction.startswith("S"):
+                corrected_score = int(correction[1:])
+                corrected_description = correction[1:]
+            else:
+                raise ValueError("Invalid correction format.")
+            
+            return corrected_score, corrected_description, True  # Corrected
+        except Exception as e:
+            print(f"Error in correction: {e}")
+            return detected_score, detected_description, False  # Not corrected
+    else:
+        return detected_score, detected_description, None  # No correction needed
+
+
 def main():
     global dartboard_image, score_images, perspective_matrices
-
+    dart_data = []
     logging.basicConfig(filename='darts_detection_log.txt', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
     perspective_matrices = load_perspective_matrices()
@@ -362,7 +413,8 @@ def main():
                 for camera_index, locationofdart in enumerate([locationofdart_R, locationofdart_L, locationofdart_C]):
                     if isinstance(locationofdart, tuple) and len(locationofdart) == 2:
                         x, y = locationofdart
-                        score, description = calculate_score_from_coordinates(x, y, camera_index)
+                        score, description, data = calculate_score_from_coordinates(x, y, camera_index)
+                        dart_data.append(data)
 
                         camera_scores[camera_index] = score
                         descriptions[camera_index] = description
@@ -399,6 +451,27 @@ def main():
                 if final_score is not None:
                     logging.info(f"Final Score (Majority Rule): {final_score} ({final_description})")
                     print(f"Final Score: {final_score} ({final_description})")
+
+                    corrected_score, corrected_description, corrected = correct_score(final_score, final_description)
+            
+                    if corrected is not None:
+                        correction_status = "Corrected" if corrected else "Not Corrected"
+                        logging.info(f"Score correction: {correction_status}. Final Score: {corrected_score} ({corrected_description})")
+                        print(f"Final Score: {corrected_score} ({corrected_description})")
+
+                    dart_data.append({
+                        "corrected": corrected,
+                        "corrected_score": (corrected_score if corrected else score),
+                        "corrected_zone": (corrected_description if corrected else description)
+                    })
+
+                    log_dart_data(
+                        timestamp=time.strftime('%Y-%m-%d %H:%M:%S'),
+                        dart_data=dart_data
+                    )
+                    dart_data.clear()
+
+
                 else:
                     logging.info("No majority score found.")
 
