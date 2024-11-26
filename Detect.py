@@ -467,6 +467,8 @@ def main():
                 
 
                     dart_data.append({
+                        "x": x,
+                        "y": y,
                         "detected_score": final_score,
                         "detected_zone": final_description,
                         "corrected": corrected,
