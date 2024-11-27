@@ -21,24 +21,35 @@ def draw_segment_text(image, center, start_angle, end_angle, radius, text):
     font_thickness = 1
     text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
     text_origin = (text_x - text_size[0] // 2, text_y + text_size[1] // 2)
-    cv2.putText(image, text, text_origin, font, font_scale, (0, 255, 0), font_thickness, cv2.LINE_AA)
+    # Draw the text
+    cv2.putText(image, text, text_origin, font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
 
 
 def draw_dartboard(dartboard_image, IMAGE_HEIGHT, IMAGE_WIDTH, DARTBOARD_DIAMETER_MM, center):
-    dartboard_image = np.ones((FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, 3), dtype=np.uint8) * 255
-    cv2.circle(dartboard_image, center, BULLSEYE_RADIUS_PIXELS, (0, 0, 0), -1, lineType=cv2.LINE_AA)
-    cv2.circle(dartboard_image, center, OUTER_BULLSEYE_RADIUS_PIXELS, (255, 0, 0), 2, lineType=cv2.LINE_AA)
-    cv2.circle(dartboard_image, center, TRIPLE_RING_INNER_RADIUS_PIXELS, (0, 255, 0), 2, lineType=cv2.LINE_AA)
-    cv2.circle(dartboard_image, center, TRIPLE_RING_OUTER_RADIUS_PIXELS, (0, 255, 0), 2, lineType=cv2.LINE_AA)
-    cv2.circle(dartboard_image, center, DOUBLE_RING_INNER_RADIUS_PIXELS, (0, 0, 255), 2, lineType=cv2.LINE_AA)
-    cv2.circle(dartboard_image, center, DOUBLE_RING_OUTER_RADIUS_PIXELS, (0, 0, 255), 2, lineType=cv2.LINE_AA)
+    #dartboard_image = np.ones((FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, 3), dtype=np.uint8) * 60   (82, 57, 39)
+    dartboard_image = np.full((FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, 3), (65, 57, 53), dtype=np.uint8)
+
+    # Draw the bullseye
+    cv2.circle(dartboard_image, center, BULLSEYE_RADIUS_PIXELS, (219, 133, 95), -1, lineType=cv2.LINE_AA)  # Red-Orange Bullseye
+    
+    # Draw the outer bullseye
+    cv2.circle(dartboard_image, center, OUTER_BULLSEYE_RADIUS_PIXELS, (248, 184, 144), 2, lineType=cv2.LINE_AA)  # Green Outer Bull
+    
+    # Draw the triple ring (inner and outer)
+    cv2.circle(dartboard_image, center, TRIPLE_RING_INNER_RADIUS_PIXELS, (219, 133, 95), 2, lineType=cv2.LINE_AA)  # Gold Inner Triple
+    cv2.circle(dartboard_image, center, TRIPLE_RING_OUTER_RADIUS_PIXELS, (219, 133, 95), 2, lineType=cv2.LINE_AA)  # Gold Outer Triple
+    
+    # Draw the double ring (inner and outer)
+    cv2.circle(dartboard_image, center, DOUBLE_RING_INNER_RADIUS_PIXELS, (248, 184, 144), 2, lineType=cv2.LINE_AA)  # Dodger Blue Inner Double
+    cv2.circle(dartboard_image, center, DOUBLE_RING_OUTER_RADIUS_PIXELS, (248, 184, 144), 2, lineType=cv2.LINE_AA)  # Dodger Blue Outer Double
+
 
     for angle in np.linspace(0, 2 * np.pi, 21)[:-1]:
         start_x = int(center[0] + np.cos(angle) * DOUBLE_RING_OUTER_RADIUS_PIXELS)
         start_y = int(center[1] + np.sin(angle) * DOUBLE_RING_OUTER_RADIUS_PIXELS)
         end_x = int(center[0] + np.cos(angle) * OUTER_BULLSEYE_RADIUS_PIXELS)
         end_y = int(center[1] + np.sin(angle) * OUTER_BULLSEYE_RADIUS_PIXELS)
-        cv2.line(dartboard_image, (start_x, start_y), (end_x, end_y), (0, 0, 0), 1, lineType=cv2.LINE_AA)
+        cv2.line(dartboard_image, (start_x, start_y), (end_x, end_y), (248, 184, 144), 1, lineType=cv2.LINE_AA)
 
     text_radius_px = int((TRIPLE_RING_OUTER_RADIUS_PIXELS + DOUBLE_RING_INNER_RADIUS_PIXELS) / 2)
     sector_scores = [10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6]
@@ -55,6 +66,7 @@ def draw_dartboard(dartboard_image, IMAGE_HEIGHT, IMAGE_WIDTH, DARTBOARD_DIAMETE
     }
 
     for angle in sector_intersections.values():
-        draw_point_at_angle(dartboard_image, center, angle, DOUBLE_RING_OUTER_RADIUS_PIXELS, (255, 0, 0), 5)
+        # Draw the sector intersections
+        draw_point_at_angle(dartboard_image, center, angle, DOUBLE_RING_OUTER_RADIUS_PIXELS, (255, 255, 255), 5)
 
     return dartboard_image
