@@ -103,15 +103,9 @@ def getCorners(img_in):
     return np.intp(edges)
 
 
-def filterCorners(corners, na, original_image=None):
+def filterCorners(corners):
     mean_corners = np.mean(corners, axis=0)
     corners_new = np.array([i for i in corners if abs(mean_corners[0][0] - i[0][0]) <= 180 and abs(mean_corners[0][1] - i[0][1]) <= 120])
-    if original_image is not None:
-        testimg = original_image.copy()
-        for i in corners_new:
-            xl, yl = i.ravel()
-            cv2.circle(testimg, (xl, yl), 3, (255, 0, 0), -1)
-        cv2.imwrite(f"images/corners_marked_{na}.jpg", testimg)
     return corners_new
 
 
@@ -305,6 +299,35 @@ def correct_score(detected_score, detected_description):
         return detected_score, detected_description, None  # No correction needed
 
 
+def proses_camera(thresh, cam, t, flip):
+    count = cv2.countNonZero(thresh)
+    cv2.putText(thresh, f"Count: {count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
+    time.sleep(0.2)
+    _, blur = diff2blur(cam, t, flip)
+    #cv2.imshow("Dart Detection - blur", blur)
+    corners = getCorners(blur)
+    corners_f = filterCorners(corners)
+    rows, cols = blur.shape[:2]
+    corners_final = filterCornersLine(corners_f, rows, cols)
+    _, thresh = cv2.threshold(blur, 60, 255, 0)
+    return thresh, corners_final, blur
+
+
+def detection_image(cam, flip, locationdart):
+    success, t = cam.read()
+    if flip:
+        t = cv2.flip(t, 0)
+
+    if not success:
+        logging.error("Failed to read camera frame.")
+        return None
+    
+    if isinstance(locationdart, tuple) and len(locationdart) == 2:
+        cv2.circle(t, locationdart, 10, (255, 255, 255), 2, 8)
+        cv2.circle(t, locationdart, 2, (0, 255, 0), 2, 8)
+    return t
+
+
 def main():
     global dartboard_image, score_images, perspective_matrices
     dart_data = []
@@ -337,7 +360,6 @@ def main():
 
     camera_scores = [None] * NUMBER_OF_CAMERAS
     descriptions = [None] * NUMBER_OF_CAMERAS
-    majority_score = None
     dart_coordinates = None
 
     takeout_threshold = 20000
@@ -351,56 +373,11 @@ def main():
         thresh_R = getThreshold(cam_R, t_R, flip=True)
         thresh_L = getThreshold(cam_L, t_L, flip=True)
         thresh_C = getThreshold(cam_C, t_C, flip=False)
-
+        
         if (cv2.countNonZero(thresh_R) > 500 and cv2.countNonZero(thresh_R) < 7500) or (cv2.countNonZero(thresh_L) > 500 and cv2.countNonZero(thresh_L) < 7500) or (cv2.countNonZero(thresh_C) > 500 and cv2.countNonZero(thresh_C) < 7500):
-
-            count_R = cv2.countNonZero(thresh_R)
-            count_L = cv2.countNonZero(thresh_L)
-            count_C = cv2.countNonZero(thresh_C)
-
-            cv2.putText(thresh_R, f"Count: {count_R}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
-            cv2.putText(thresh_L, f"Count: {count_L}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
-            cv2.putText(thresh_C, f"Count: {count_C}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
-
-            time.sleep(0.2)
-
-            t_plus_R, blur_R = diff2blur(cam_R, t_R, True)
-            t_plus_L, blur_L = diff2blur(cam_L, t_L, True)
-            t_plus_C, blur_C = diff2blur(cam_C, t_C, False)
-            cv2.imshow("Dart Detection - blur_R", blur_R)
-            cv2.imshow("Dart Detection - blur_L", blur_L)
-            cv2.imshow("Dart Detection - blur_C", blur_C)
-
-            corners_R = getCorners(blur_R)
-            corners_L = getCorners(blur_L)
-            corners_C = getCorners(blur_C)
-
-            if corners_R.size < 40 and corners_L.size < 40 and corners_C.size < 40:
-                logging.warning("### dart not detected")
-                continue
-
-            success_R, ttt_R = cam_R.read()
-            success_L, ttt_L = cam_L.read()
-            success_C, ttt_C = cam_C.read()
-            ttt_R = cv2.flip(ttt_R, 0)
-            ttt_L = cv2.flip(ttt_L, 0)
-
-            corners_f_R = filterCorners(corners_R, "r", ttt_R)
-            corners_f_L = filterCorners(corners_L, "l", ttt_L)
-            corners_f_C = filterCorners(corners_C, "c", ttt_C)
-
-            if corners_f_R.size < 30 and corners_f_L.size < 30 and corners_f_C.size < 30:
-                logging.warning("### dart not detected")
-                continue
-
-            rows, cols = blur_R.shape[:2]
-            corners_final_R = filterCornersLine(corners_f_R, rows, cols)
-            corners_final_L = filterCornersLine(corners_f_L, rows, cols)
-            corners_final_C = filterCornersLine(corners_f_C, rows, cols)
-
-            _, thresh_R = cv2.threshold(blur_R, 60, 255, 0)
-            _, thresh_L = cv2.threshold(blur_L, 60, 255, 0)
-            _, thresh_C = cv2.threshold(blur_C, 60, 255, 0)
+            thresh_R, corners_final_R, blur_R = proses_camera(thresh_R, cam_R, t_R, True)
+            thresh_L, corners_final_L, blur_L = proses_camera(thresh_L, cam_L, t_L, True)
+            thresh_C, corners_final_C, blur_C = proses_camera(thresh_C, cam_C, t_C, False)
 
             logging.info(f"New frame processed, thresholds - R: {cv2.countNonZero(thresh_R)} L: {cv2.countNonZero(thresh_L)} C: {cv2.countNonZero(thresh_C)}")
 
@@ -411,7 +388,6 @@ def main():
                 locationofdart_R, prev_tip_point_R = getRealLocation(corners_final_R, "right", prev_tip_point_R, blur_R, kalman_filter_R)
                 locationofdart_L, prev_tip_point_L = getRealLocation(corners_final_L, "left", prev_tip_point_L, blur_L, kalman_filter_L)
                 locationofdart_C, prev_tip_point_C = getRealLocation(corners_final_C, "center", prev_tip_point_C, blur_C, kalman_filter_C)
-
 
                 for camera_index, locationofdart in enumerate([locationofdart_R, locationofdart_L, locationofdart_C]):
                     if isinstance(locationofdart, tuple) and len(locationofdart) == 2:
@@ -430,10 +406,8 @@ def main():
                             score_counts[score] += 1
                         else:
                             score_counts[score] = 1
-
                 if score_counts:
                     final_score = max(score_counts, key=score_counts.get)
-                    majority_score = final_score
 
                     majority_camera_index = camera_scores.index(final_score)
                     final_description = descriptions[majority_camera_index]
@@ -445,13 +419,12 @@ def main():
                         inverse_matrix = cv2.invert(perspective_matrices[majority_camera_index])[1]
                         transformed_coords = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), inverse_matrix)[0][0]
                         dart_coordinates = tuple(map(int, transformed_coords))
-                
+
                 if final_score is not None:
                     logging.info(f"Final Score (Majority Rule): {final_score} ({final_description})")
                     print(f"Final Score: {final_score} ({final_description})")
 
                     corrected_score, corrected_description, corrected = correct_score(final_score, final_description)
-
                     x, y = dart_coordinates
 
                     if corrected is not None:
@@ -464,11 +437,10 @@ def main():
                     else:
                         cv2.circle(dartboard_image_copy, (int(x), int(y)), 5, (205, 90, 106), -1)
                         cv2.imwrite("images/dartboard_image_copy.jpg", dartboard_image_copy)
-                
 
                     dart_data.append({
-                        "x": x,
-                        "y": y,
+                        "x_coordinate": x,
+                        "y_coordinate": y,
                         "detected_score": final_score,
                         "detected_zone": final_description,
                         "corrected": corrected,
@@ -476,58 +448,35 @@ def main():
                         "corrected_zone": (corrected_description if corrected else description)
                     })
 
-                    log_dart_data(
-                        timestamp=time.strftime('%Y-%m-%d %H:%M:%S'),
-                        dart_data=dart_data
-                    )
+                    log_dart_data(time.time(), dart_data)
                     dart_data.clear()
 
-
                 else:
-                    logging.info("No majority score found.")
+                    logging.info("No majority score detected.")
 
-                success_R, tt_R = cam_R.read()
-                success_L, tt_L = cam_L.read()
-                success_C, tt_C = cam_C.read()
-                tt_R = cv2.flip(tt_R, 0)
-                tt_L = cv2.flip(tt_L, 0)
-
-                if not (success_R and success_L and success_C):
-                    logging.error("Failed to read one or more camera frames.")
-                    continue
-
-                if isinstance(locationofdart_R, tuple) and len(locationofdart_R) == 2:
-                    cv2.circle(tt_R, locationofdart_R, 10, (255, 255, 255), 2, 8)
-                    cv2.circle(tt_R, locationofdart_R, 2, (0, 255, 0), 2, 8)
-
-                if isinstance(locationofdart_L, tuple) and len(locationofdart_L) == 2:
-                    cv2.circle(tt_L, locationofdart_L, 10, (255, 255, 255), 2, 8)
-                    cv2.circle(tt_L, locationofdart_L, 2, (0, 255, 0), 2, 8)
-
-                if isinstance(locationofdart_C, tuple) and len(locationofdart_C) == 2:
-                    cv2.circle(tt_C, locationofdart_C, 10, (255, 255, 255), 2, 8)
-                    cv2.circle(tt_C, locationofdart_C, 2, (0, 255, 0), 2, 8)
+                tt_R = detection_image(cam_R, True, locationofdart_R)
+                tt_L = detection_image(cam_L, True, locationofdart_L)
+                tt_C = detection_image(cam_C, False, locationofdart_C)
 
             except Exception as e:
-                logging.error(f"Something went wrong in finding the dart's location: {str(e)}")
-                break
+                logging.error(f"Error processing frame: {str(e)}")
+                continue
 
+            """
             cv2.imshow("Dart Detection - Right", tt_R)
             cv2.imshow("Dart Detection - Left", tt_L)
             cv2.imshow("Dart Detection - Center", tt_C)
+            """
+
+            if camera_scores[0] is not None and camera_scores[1] is not None and camera_scores[2] is not None:
+                cv2.putText(tt_R, f"Score: {camera_scores[0]} ({descriptions[0]})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
+                cv2.putText(tt_L, f"Score: {camera_scores[1]} ({descriptions[1]})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
+                cv2.putText(tt_C, f"Score: {camera_scores[2]} ({descriptions[2]})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
+                
+                cv2.imwrite("images/dart_detection_R.jpg", tt_R)
+                cv2.imwrite("images/dart_detection_L.jpg", tt_L)
+                cv2.imwrite("images/dart_detection_C.jpg", tt_C)
             
-            if camera_scores[0] is not None:
-                cv2.putText(tt_R, f"Score: {camera_scores[0]}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.imwrite("images/tt_R.jpg", tt_R)
-
-            if camera_scores[1] is not None:
-                cv2.putText(tt_L, f"Score: {camera_scores[1]}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.imwrite("images/tt_L.jpg", tt_L)
-
-            if camera_scores[2] is not None:
-                cv2.putText(tt_C, f"Score: {camera_scores[2]}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.imwrite("images/tt_C.jpg", tt_C)
-
             success, t_R = cam2gray(cam_R, flip=True)
             _, t_L = cam2gray(cam_L, flip=True)
             _, t_C = cam2gray(cam_C, flip=False)
@@ -547,8 +496,7 @@ def main():
     cam_L.release()
     cam_C.release()
     cv2.destroyAllWindows()
-    logging.info('Application end')
-
+    logging.info("Dart detection completed.")
 
 if __name__ == "__main__":
     main() 
