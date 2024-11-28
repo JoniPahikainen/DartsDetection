@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import time
-from config import (DOUBLE_RING_OUTER_RADIUS_PX, CENTER)
+from config import (DOUBLE_RING_OUTER_RADIUS_PIXELS, CENTER, CAMERA_INDEXES)
 
 # Global variables
 perspective_matrices = []
@@ -10,13 +10,13 @@ perspective_matrices = []
 def calibrate():
     global drawn_points
     drawn_points = np.float32([
-        [CENTER[0], CENTER[1] - DOUBLE_RING_OUTER_RADIUS_PX],
-        [CENTER[0] + DOUBLE_RING_OUTER_RADIUS_PX, CENTER[1]],
-        [CENTER[0], CENTER[1] + DOUBLE_RING_OUTER_RADIUS_PX],
-        [CENTER[0] - DOUBLE_RING_OUTER_RADIUS_PX, CENTER[1]],
+        [CENTER[0], CENTER[1] - DOUBLE_RING_OUTER_RADIUS_PIXELS],
+        [CENTER[0] + DOUBLE_RING_OUTER_RADIUS_PIXELS, CENTER[1]],
+        [CENTER[0], CENTER[1] + DOUBLE_RING_OUTER_RADIUS_PIXELS],
+        [CENTER[0] - DOUBLE_RING_OUTER_RADIUS_PIXELS, CENTER[1]],
     ])
     
-    camera_indexes = [0, 1, 2]
+    camera_indexes = CAMERA_INDEXES
     for camera_index in camera_indexes:
         live_feed_points = calibrate_camera(camera_index)
         if live_feed_points is not None:
