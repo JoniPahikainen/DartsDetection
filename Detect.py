@@ -5,13 +5,12 @@ import numpy as np
 import math
 from shapely.geometry import Polygon
 import logging
-import csv
 import json
 from dartboard_utils import draw_dartboard
 from config import (
     NUMBER_OF_CAMERAS, FRAME_WIDTH_PIXELS, FRAME_HEIGHT_PIXELS, DARTBOARD_DIAMETER_MM, BULLSEYE_RADIUS_PIXELS, OUTER_BULLSEYE_RADIUS_PIXELS,
     TRIPLE_RING_INNER_RADIUS_PIXELS, TRIPLE_RING_OUTER_RADIUS_PIXELS, DOUBLE_RING_INNER_RADIUS_PIXELS, DOUBLE_RING_OUTER_RADIUS_PIXELS,
-    DARTBOARD_CENTER_COORDS
+    DARTBOARD_CENTER_COORDS, CAMERA_INDEXES
 )
 
 dartboard_image = None
@@ -299,7 +298,7 @@ def correct_score(detected_score, detected_description):
         return detected_score, detected_description, None  # No correction needed
 
 
-def proses_camera(thresh, cam, t, flip):
+def process_camera(thresh, cam, t, flip):
     count = cv2.countNonZero(thresh)
     cv2.putText(thresh, f"Count: {count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
     time.sleep(0.2)
@@ -334,10 +333,15 @@ def main():
     logging.basicConfig(filename='darts_detection_log.txt', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
     perspective_matrices = load_perspective_matrices()
+
+    cams = [initialize_camera(index) for index in CAMERA_INDEXES]
+
+    cam_R, cam_L, cam_C = cams
+    """
     cam_R = initialize_camera(0)
     cam_L = initialize_camera(1)
     cam_C = initialize_camera(2)
-
+    """
 
     success, t_R = cam2gray(cam_R, flip=True)
     _, t_L = cam2gray(cam_L, flip=True)
@@ -375,9 +379,9 @@ def main():
         thresh_C = getThreshold(cam_C, t_C, flip=False)
         
         if (cv2.countNonZero(thresh_R) > 500 and cv2.countNonZero(thresh_R) < 7500) or (cv2.countNonZero(thresh_L) > 500 and cv2.countNonZero(thresh_L) < 7500) or (cv2.countNonZero(thresh_C) > 500 and cv2.countNonZero(thresh_C) < 7500):
-            thresh_R, corners_final_R, blur_R = proses_camera(thresh_R, cam_R, t_R, True)
-            thresh_L, corners_final_L, blur_L = proses_camera(thresh_L, cam_L, t_L, True)
-            thresh_C, corners_final_C, blur_C = proses_camera(thresh_C, cam_C, t_C, False)
+            thresh_R, corners_final_R, blur_R = process_camera(thresh_R, cam_R, t_R, True)
+            thresh_L, corners_final_L, blur_L = process_camera(thresh_L, cam_L, t_L, True)
+            thresh_C, corners_final_C, blur_C = process_camera(thresh_C, cam_C, t_C, False)
 
             logging.info(f"New frame processed, thresholds - R: {cv2.countNonZero(thresh_R)} L: {cv2.countNonZero(thresh_L)} C: {cv2.countNonZero(thresh_C)}")
 
