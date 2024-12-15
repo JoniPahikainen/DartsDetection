@@ -18,15 +18,14 @@ image_paths = [
 
 
 def clear_fields():
-    """Clear all images and score fields."""
     for i in range(3):
         image_labels[i].configure(image=None)
         detected_score_vars[i].set("")
         corrected_score_vars[i].set("")
+        detected_zone_vars[i].set("")
 
 
 def preload_images():
-    """Preload images on startup."""
     for index, file_path in enumerate(image_paths):
         if file_path:
             image = ctk.CTkImage(
@@ -74,13 +73,10 @@ def log_to_json(data):
     except FileNotFoundError:
         logging.warning("JSON file not found. Creating a new file.")
         setup_json()  # Initialize a new JSON file
-        log_to_json(data)  # Retry logging the data
+        log_to_json(data)
 
 
 def save_dart_data(dart_group):
-    """
-    Save a group of dart data, including corrections, to the JSON file.
-    """
     timestamp = time.time()
     data = {
         "timestamp": timestamp,
@@ -129,10 +125,6 @@ class KalmanFilter:
         self.P = np.dot(np.dot(I - np.dot(K, self.H), self.P), (I - np.dot(K, self.H)).T) + np.dot(np.dot(K, self.R), K.T)
 
 def update_gui_with_dart_data(index, dart_data, image_path):
-    """
-    Updates the GUI with detected dart data and replaces the image.
-    """
-    # Check if dart_data contains the summary dictionary
     if isinstance(dart_data, list) and len(dart_data) > 1:
         summary_data = dart_data[-1]  # The last element appears to be the summary dictionary
     else:
@@ -142,11 +134,9 @@ def update_gui_with_dart_data(index, dart_data, image_path):
     detected_score = summary_data.get('detected_score', "N/A")
     detected_zone = summary_data.get('detected_zone', "N/A")
 
-    # Update detected score in the GUI
-    detected_score_vars[index].set(
-        f"Score: {detected_score} (Zone: {detected_zone})"
-    )
-
+    detected_score_vars[index].set(detected_score)
+    detected_zone_vars[index].set(f"Score: {detected_score} (Zone: {detected_zone})")
+    
     # Update the image in the GUI
     image = ctk.CTkImage(
         light_image=Image.open(image_path),
@@ -156,21 +146,51 @@ def update_gui_with_dart_data(index, dart_data, image_path):
     image_labels[index].configure(image=image)
     image_labels[index].image = image
 
+def parse_correction_input(correction_input):
+    multiplier_mapping = {'S': 1, 'D': 2, 'T': 3}
+
+    if correction_input.isdigit():
+        correction_input = f"S{correction_input}"
+
+    if len(correction_input) < 2:
+        return None, None
+
+    multiplier = correction_input[0].upper()
+    try:
+        number = int(correction_input[1:])
+    except ValueError:
+        return None, None
+
+    if multiplier not in multiplier_mapping or not (1 <= number <= 20) and number != 25:
+        return None, None
+
+    score = multiplier_mapping[multiplier] * number
+    zone = f"{number} ({'Single' if multiplier == 'S' else 'Double' if multiplier == 'D' else 'Triple'})"
+
+    return score, zone
 
 
 def collect_and_save_data():
-    """
-    Collect data from the GUI, apply corrections if provided, and save to JSON.
-    """
-
     dart_group = []
     for i in range(3):
         corrected = True
         detected_score = detected_score_vars[i].get()
-        corrected_score = corrected_score_vars[i].get()
+        corrected_input = corrected_score_vars[i].get()
+        detected_zone = detected_zone_vars[i].get()
 
-        # If correction is empty, use detected score
-        if corrected_score.strip() == "":
+        # Parse correction input if provided
+        if corrected_input.strip():
+            corrected_score, corrected_zone = parse_correction_input(corrected_input)
+            if corrected_score is None:
+                corrected_score = detected_score
+                corrected_zone = detected_zone
+                corrected = False
+        else:
+            corrected_score = detected_score
+            corrected_zone = detected_zone
+            corrected = False
+
+        if str(corrected_score).strip() == "":
             corrected_score = detected_score
             corrected = False
 
@@ -178,10 +198,12 @@ def collect_and_save_data():
 
         dart_group.append({
             "dart_data": dart_data_for_dart,
-            "detected_score": detected_score,
-            "corrected_score": corrected_score,
+            "detected_score": int(detected_score),
+            "detected_zone": detected_zone,
+            "corrected_score": int(corrected_score),
+            "corrected_zone": corrected_zone,
             "corrected": corrected,
-            "image": f"camera_{i}_image.jpg"
+            "dart_index": i + 1
         })
 
     save_dart_data(dart_group)
@@ -189,9 +211,6 @@ def collect_and_save_data():
     clear_fields()  # Clear fields for the next round
 
 def detection_image(cam_image, locationdart):
-    """
-    Draws a circle on the provided image at the specified location.
-    """
     if cam_image is None:
         return None
 
@@ -204,7 +223,6 @@ def detection_image(cam_image, locationdart):
         cv2.circle(image_with_circle, locationdart, 2, (0, 255, 0), 2, 8)
 
     return image_with_circle
-
 
 
 def run_dart_detection():
@@ -239,6 +257,7 @@ def run_dart_detection():
 
     for i in range(3):  # Detect three darts
         print(f"Detecting dart {i+1}...")
+        logging.info(f"Detecting dart {i+1}...")
         dart_result, t_R, t_L, t_C = detect_dart(
             cam_R, cam_L, cam_C, t_R, t_L, t_C,
             camera_scores, descriptions,
@@ -248,17 +267,29 @@ def run_dart_detection():
         )
 
         dart_data.append(dart_result)
-
         if dart_result:
             summary_data = dart_result[-1] if isinstance(dart_result, list) and len(dart_result) > 1 else {}
 
-            # Get coordinates
             x_coordinate = summary_data.get("x_coordinate", "N/A")
+            x_coordinate = int(x_coordinate)
             y_coordinate = summary_data.get("y_coordinate", "N/A")
+            y_coordinate = int(y_coordinate)
+            final_camera_index = summary_data.get("final_camera_index", None)
             coords = (x_coordinate, y_coordinate) if isinstance(x_coordinate, int) and isinstance(y_coordinate, int) else None
 
-            # Draw detection point on the image
-            processed_image = detection_image(t_L, coords)
+            if final_camera_index == 0:
+
+                detect_cam = cam_R
+            elif final_camera_index == 1:
+                detect_cam = cam_L
+            elif final_camera_index == 2:
+                detect_cam = cam_C
+            else:
+                logging.error(f"Invalid camera index: {final_camera_index}")
+                continue
+
+            detect_image = cv2.flip(detect_cam.read()[1], 0)
+            processed_image = detection_image(detect_image, coords)
 
             # Save processed image with detection
             image_path = f"images/dart_detection_{i+1}.jpg"
@@ -266,7 +297,6 @@ def run_dart_detection():
 
             # Log and print coordinates
             logging.info(f"Dart detected for attempt {i+1}: x={x_coordinate}, y={y_coordinate}")
-            print(f"Coordinates for dart {i+1}: x={x_coordinate}, y={y_coordinate}")
 
             # Update the GUI with new data and image
             update_gui_with_dart_data(i, dart_result, image_path)
@@ -299,29 +329,26 @@ frame.pack(fill="both", expand=True, padx=20, pady=20)  # Pack the frame with pa
 
 # Image placeholders and fields
 image_labels = []
-detected_score_vars = []
-corrected_score_vars = []
+detected_score_vars = [ctk.StringVar(value="Detected: ") for _ in range(len(image_paths))]
+corrected_score_vars = [ctk.StringVar() for _ in range(len(image_paths))]
+detected_zone_vars = [ctk.StringVar(value="") for _ in range(len(image_paths))]
 
-for i in range(3):
+for i in range(len(image_paths)):
     # Image placeholder
     image_frame = ctk.CTkFrame(frame, corner_radius=10)  # Create a subframe for each dart
     image_frame.grid(row=0, column=i, padx=10, pady=10)  # Grid position for subframes
 
-    image_label = ctk.CTkLabel(image_frame, text="www", width=200, height=200, fg_color="gray")
+    image_label = ctk.CTkLabel(image_frame, text="No Image", width=200, height=200, fg_color="gray")
     image_label.grid(row=0, column=0, padx=10, pady=10)  # Placeholder for images
     image_labels.append(image_label)
 
     # Detected score field
-    detected_score_var = ctk.StringVar(value="Detected: ")
-    detected_score_label = ctk.CTkLabel(image_frame, textvariable=detected_score_var)
+    detected_score_label = ctk.CTkLabel(image_frame, textvariable=detected_score_vars[i])
     detected_score_label.grid(row=1, column=0, pady=5)  # Display detected score
-    detected_score_vars.append(detected_score_var)
 
     # Corrected score input
-    corrected_score_var = ctk.StringVar()
-    corrected_score_entry = ctk.CTkEntry(image_frame, textvariable=corrected_score_var, width=200)
+    corrected_score_entry = ctk.CTkEntry(image_frame, textvariable=corrected_score_vars[i], width=200)
     corrected_score_entry.grid(row=2, column=0, pady=5)  # Input for corrections
-    corrected_score_vars.append(corrected_score_var)
 
 # Submit button to save data
 submit_button = ctk.CTkButton(frame, text="Submit", command=collect_and_save_data, fg_color="green")

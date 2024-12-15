@@ -349,17 +349,43 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                 logging.debug(f"Scores: {scores}")
 
                 final_score = max(set(scores), key=scores.count)
+                logging.info(f"Final score determined: {final_score}")
                 
+                """
                 majority_camera_index = camera_scores.index(final_score)
                 final_description = descriptions[majority_camera_index]
+                """
+
+                final_camera_index = -1  # Default to an invalid value
+                transformed_x = None
+                transformed_y = None
+
+
+                # Find the coordinates corresponding to the majority score
+                logging.debug(f"final_score: {final_score}, x: {x}, y: {y}")
+                for res in results:
+                    if res["detected_score"] == final_score:
+                        logging.debug(f"Camera index: {res['camera_index']}")
+                        final_camera_index = res["camera_index"]
+                        transformed_x = res["transformed_x"]
+                        transformed_y = res["transformed_y"]
+                        break  # Stop after finding the first match
+
+                logging.debug(f"Final camera index determined: {final_camera_index}")
+
+                final_description = next(
+                    (res["zone"] for res in results if res["detected_score"] == final_score),
+                    "Unknown"
+                )
 
                 logging.info(f"Final score: {final_score}")
 
                 dart_data.append({
-                    "x_coordinate": x,
-                    "y_coordinate": y,
+                    "x_coordinate": transformed_x,
+                    "y_coordinate": transformed_y,
                     "detected_score": final_score,
                     "detected_zone": final_description,
+                    "final_camera_index": final_camera_index
                 })
 
             _, t_R = cam2gray(cam_R, flip=True)
