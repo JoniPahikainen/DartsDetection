@@ -155,6 +155,7 @@ def run_dart_detection():
     print("Starting dart detection...")
 
     for i in range(3):  
+        logging.info(f"Detecting dart {i+1}...")
         dart_start = time.time()
         
         detect_start = time.time()
@@ -166,32 +167,29 @@ def run_dart_detection():
             perspective_matrices
         )
         detect_time = time.time() - detect_start
-        
+
+        dart_data.append(dart_result)
         save_time, gui_update_time = 0, 0
         if dart_result:
             save_start = time.time()
             summary_data = dart_result[-1] if isinstance(dart_result, list) and len(dart_result) > 1 else {}
-
             x_coordinate = summary_data.get("x_coordinate", "N/A")
             y_coordinate = summary_data.get("y_coordinate", "N/A")
             final_camera_index = summary_data.get("final_camera_index", None)
-            coords = (
-                (int(x_coordinate), int(y_coordinate)) 
-                if isinstance(x_coordinate, int) and isinstance(y_coordinate, int) 
-                else None
-            )
-
+            coords = ((int(x_coordinate), int(y_coordinate)) if isinstance(x_coordinate, int) and isinstance(y_coordinate, int) else None)
             detect_cam = [cam_R, cam_L, cam_C][final_camera_index] if final_camera_index is not None else None
             detect_image = cv2.flip(detect_cam.read()[1], 0) if detect_cam else None
             processed_image = detection_image(detect_image, coords)
             image_path = f"images/dart_detection_{i+1}.jpg"
             cv2.imwrite(image_path, processed_image)
             save_time = time.time() - save_start
-
+            
+            logging.info(f"Dart detected for attempt {i+1}: x={x_coordinate}, y={y_coordinate}")
             gui_update_start = time.time()
             update_gui_with_dart_data(i, dart_result, image_path)
             gui_update_time = time.time() - gui_update_start
         else:
+            logging.warning(f"No dart detected for attempt {i+1}")
             update_gui_with_dart_data(i, {"detected_score": "N/A", "detected_zone": "N/A"}, image_paths[i])
 
         dart_total_time = time.time() - dart_start
@@ -251,7 +249,7 @@ def update_gui_with_dart_data(index, dart_data, image_path):
     detected_zone = summary_data.get('detected_zone', "N/A")
 
     detected_score_vars[index].set(detected_score)
-    detected_zone_vars[index].set(f"Score: {detected_score} (Zone: {detected_zone})")
+    detected_zone_vars[index].set(f"{detected_score} ({detected_zone})")
     
     image = ctk.CTkImage(
         light_image=Image.open(image_path),
