@@ -9,6 +9,18 @@ import json
 import time
 
 
+file_handler = logging.FileHandler("app.log")
+file_handler.setLevel(logging.DEBUG)  
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)  
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[file_handler, console_handler]
+)
+
 image_paths = [
     "images/camera_0_image.jpg",
     "images/camera_1_image.jpg",
@@ -25,7 +37,7 @@ def initialize_cameras():
         cam_R, cam_L, cam_C = cams
         print("Cameras initialized.")
     else:
-        print("Cameras already initialized.")
+        logging.debug("Cameras already initialized.")
 
 
 def initialize_camera(index, width=432, height=432):
@@ -66,7 +78,6 @@ def save_dart_data(dart_group):
         "dart_group": dart_group
     }
     log_to_json(data)
-    print(f"Data saved for timestamp: {timestamp}")
 
 
 def load_perspective_matrices():
@@ -144,15 +155,12 @@ def run_dart_detection():
     kalman_filter_C = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
     kalman_time = time.time() - kalman_start
 
-    print(
-        f"Init Summary: Perspective Load: {perspective_time:.2f}s, Camera Init: {camera_init_time:.2f}s, "
-        f"Frame Capture: {capture_time:.2f}s, Kalman Init: {kalman_time:.2f}s"
-    )
+    logging.debug("Init Summary: Perspective Load: %.2fs, Camera Init: %.2fs, Frame Capture: %.2fs, Kalman Init: %.2fs", perspective_time, camera_init_time, capture_time, kalman_time)
 
     camera_scores = [None] * NUMBER_OF_CAMERAS
     descriptions = [None] * NUMBER_OF_CAMERAS
 
-    print("Starting dart detection...")
+    
 
     for i in range(3):  
         logging.info(f"Detecting dart {i+1}...")
@@ -167,12 +175,14 @@ def run_dart_detection():
             perspective_matrices
         )
         detect_time = time.time() - detect_start
+        detected_score = ()
 
         dart_data.append(dart_result)
         save_time, gui_update_time = 0, 0
         if dart_result:
             save_start = time.time()
             summary_data = dart_result[-1] if isinstance(dart_result, list) and len(dart_result) > 1 else {}
+            detected_score = summary_data.get('detected_score', "N/A")
             x_coordinate = summary_data.get("x_coordinate", "N/A")
             y_coordinate = summary_data.get("y_coordinate", "N/A")
             final_camera_index = summary_data.get("final_camera_index", None)
@@ -184,7 +194,7 @@ def run_dart_detection():
             cv2.imwrite(image_path, processed_image)
             save_time = time.time() - save_start
             
-            logging.info(f"Dart detected for attempt {i+1}: x={x_coordinate}, y={y_coordinate}")
+            logging.debug(f"Dart detected for attempt {i+1}: x={x_coordinate}, y={y_coordinate}")
             gui_update_start = time.time()
             update_gui_with_dart_data(i, dart_result, image_path)
             gui_update_time = time.time() - gui_update_start
@@ -193,13 +203,10 @@ def run_dart_detection():
             update_gui_with_dart_data(i, {"detected_score": "N/A", "detected_zone": "N/A"}, image_paths[i])
 
         dart_total_time = time.time() - dart_start
-        print(
-            f"Dart {i+1} | Detection: {detect_time:.2f}s, Save: {save_time:.2f}s, GUI Update: {gui_update_time:.2f}s, "
-            f"Total: {dart_total_time:.2f}s"
-        )
+        logging.info(f"Dart {i+1} Score: {detected_score} | Detection: {detect_time:.2f}s, Save: {save_time:.2f}s, GUI Update: {gui_update_time:.2f}s, Total: {dart_total_time:.2f}s")
     
     total_process_time = time.time() - process_start
-    print(f"Total Detection Process: {total_process_time:.2f}s")
+    logging.debug(f"Total Detection Process: {total_process_time:.2f}s")
 
 
 def detection_image(cam_image, locationdart):
@@ -296,13 +303,16 @@ def collect_and_save_data():
         })
 
     save_dart_data(dart_group)
-    print("Dart data collected and saved.")
+    logging.info("Dart data collected and saved.")
+    
      
     if stop_after_submit_var.get():
-        print("Stopping detection after submit...")
+        logging.info("Stopping detection after submit...")
+        
         cleanup_cameras()  
     else:
-        print("Continuing detection...")
+        logging.info("Continuing detection...")
+        
         clear_fields()  
         run_dart_detection()  
 
@@ -316,12 +326,14 @@ def cleanup_cameras():
     if cam_C:
         cam_C.release()
     cv2.destroyAllWindows()
-    print("Cameras released and cleaned up.")
+    logging.info("Cameras released and cleaned up.")
+    
 
 
 def stop_detection():
     cleanup_cameras()
-    print("Detection stopped.")
+    logging.info("Detection stopped.")
+    
 
 
 class KalmanFilter:
