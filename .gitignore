@@ -11,7 +11,7 @@ images/
 camera_calibration_*.npz
 
 # Ignore the log file where the application logs are stored
-darts_detection_log.txt
+app.log
 
 # Ignore the json file where the dart detection data is stored
 darts_data.json
