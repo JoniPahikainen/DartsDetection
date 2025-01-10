@@ -1,3 +1,17 @@
+"""
+================================================================================
+Dart Detection System - Data Analysis & Visualization
+================================================================================
+
+This script is designed for **testing** and **collecting data** to support the 
+thesis on the dart detection system. It processes and visualizes dart detection 
+data to evaluate system performance and identify areas for improvement.
+
+Note: This script is for analysis purposes only. It is not part of the core 
+detection system.
+================================================================================
+"""
+
 import json
 import matplotlib.pyplot as plt
 import pandas as pd
