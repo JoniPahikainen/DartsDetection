@@ -1,4 +1,7 @@
-numpy==2.1.1
+customtkinter==5.2.2
+darkdetect==0.8.0
+numpy==2.2.1
 opencv-contrib-python==4.10.0.84
-opencv-python==4.10.0.84
+packaging==24.2
+pillow==11.1.0
 shapely==2.0.6
