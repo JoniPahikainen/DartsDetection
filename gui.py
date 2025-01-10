@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from PIL import Image
+from PIL import Image, ImageDraw
 from Detect import detect_dart
 import logging
 from config import (NUMBER_OF_CAMERAS, CAMERA_INDEXES)
@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 import json
 import time
+import os
 
 
 file_handler = logging.FileHandler("app.log")
@@ -101,17 +102,30 @@ def clear_fields():
         detected_zone_vars[i].set("")
 
 
+def create_placeholder_image(file_path):
+    img = Image.new('RGB', (200, 200), color=(211, 211, 211))
+    draw = ImageDraw.Draw(img)
+    draw.text((50, 90), "No Image", fill=(0, 0, 0))
+    img.save(file_path)
+
+
 def preload_images():
     for index, file_path in enumerate(image_paths):
-        if file_path:
+        if not os.path.exists(file_path):
+            logging.info(f"Creating placeholder image for {file_path}")
+            create_placeholder_image(file_path)
+        try:
             image = ctk.CTkImage(
-                light_image=Image.open(file_path),  
+                light_image=Image.open(file_path),
                 dark_image=Image.open(file_path),
-                size=(200, 200)  
+                size=(200, 200)
             )
             image_labels[index].configure(image=image)
             image_labels[index].image = image
-            detected_score_vars[index].set(f"Detected: {50 + index}")  
+            detected_score_vars[index].set(f"Detected: {50 + index}")
+        except Exception as e:
+            logging.error(f"Error loading image {file_path}: {e}")
+            detected_score_vars[index].set("Error Loading Image")
 
 
 def cam2gray(cam, flip=False):
@@ -172,7 +186,7 @@ def run_dart_detection():
             camera_scores, descriptions,
             kalman_filter_R, kalman_filter_L, kalman_filter_C,
             None, None, None,
-            perspective_matrices
+            perspective_matrices, dart_index=i
         )
         detect_time = time.time() - detect_start
         detected_score = ()
@@ -269,6 +283,8 @@ def update_gui_with_dart_data(index, dart_data, image_path):
 
 def collect_and_save_data():
     dart_group = []
+    corrected_darts = []
+
     for i in range(3):
         corrected = True
         detected_score = detected_score_vars[i].get()
@@ -291,6 +307,7 @@ def collect_and_save_data():
             corrected = False
 
         dart_data_for_dart = dart_data[i] if isinstance(dart_data, list) and i < len(dart_data) else {}
+        corrected_darts.append(corrected)
 
         dart_group.append({
             "dart_data": dart_data_for_dart,
@@ -299,22 +316,27 @@ def collect_and_save_data():
             "corrected_score": int(corrected_score),
             "corrected_zone": corrected_zone,
             "corrected": corrected,
-            "dart_index": i + 1
+            "dart_index": i + 1,
         })
+
+    finalized_image_paths = finalize_images(corrected_darts=corrected_darts)
+    
+    for i in range(len(dart_group)):
+        if i < len(finalized_image_paths):
+            dart_group[i]["image_path"] = finalized_image_paths[i]
+        else:
+            dart_group[i]["image_path"] = ""
 
     save_dart_data(dart_group)
     logging.info("Dart data collected and saved.")
-    
-     
+
     if stop_after_submit_var.get():
         logging.info("Stopping detection after submit...")
-        
-        cleanup_cameras()  
+        cleanup_cameras()
     else:
         logging.info("Continuing detection...")
-        
-        clear_fields()  
-        run_dart_detection()  
+        clear_fields()
+        run_dart_detection()
 
 
 def cleanup_cameras():
@@ -327,13 +349,41 @@ def cleanup_cameras():
         cam_C.release()
     cv2.destroyAllWindows()
     logging.info("Cameras released and cleaned up.")
-    
 
 
 def stop_detection():
     cleanup_cameras()
     logging.info("Detection stopped.")
-    
+
+
+def finalize_images(temp_dir="images\\temp_images", final_dir="images\\corrected", corrected_darts=None):
+    os.makedirs(final_dir, exist_ok=True)
+    temp_images = os.listdir(temp_dir)
+    finalized_image_paths = [] 
+
+    for filename in temp_images:
+        try:
+            dart_number = int(filename.split("_")[0].replace("dart", ""))
+            temp_path = os.path.join(temp_dir, filename)
+            logging.debug(f"Processing file {filename} for dart {dart_number}...")
+
+            if corrected_darts:
+                if corrected_darts[dart_number - 1]:
+                    timestamp = int(time.time())
+                    name, ext = os.path.splitext(filename)
+                    final_filename = f"{timestamp}_{name.replace(f'dart{dart_number - 1}', f'dart{dart_number}')}{ext}"
+                    final_path = os.path.join(final_dir, final_filename)
+                    os.rename(temp_path, final_path)
+                    logging.info(f"Finalized image: {final_path}")
+                    finalized_image_paths.append(final_path)
+                else:
+                    os.remove(temp_path)
+                    logging.debug(f"Deleted temporary image: {temp_path}")
+            else:
+                logging.warning(f"Skipping file {filename} due to mismatch with corrected_darts list.")
+        except (ValueError, IndexError) as e:
+            logging.error(f"Error processing file {filename}: {e}")
+    return finalized_image_paths
 
 
 class KalmanFilter:

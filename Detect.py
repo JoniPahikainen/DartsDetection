@@ -5,6 +5,7 @@ import math
 from shapely.geometry import Polygon
 import logging
 import json
+import os
 from dartboard_utils import draw_dartboard
 from config import (
     NUMBER_OF_CAMERAS, FRAME_WIDTH_PIXELS, FRAME_HEIGHT_PIXELS, DARTBOARD_DIAMETER_MM, BULLSEYE_RADIUS_PIXELS, OUTER_BULLSEYE_RADIUS_PIXELS,
@@ -40,7 +41,6 @@ def log_to_json(data):
         logging.warning("JSON file not found. Creating a new file.")
         setup_json()  
         log_to_json(data)  
-
 
 
 def log_dart_data(timestamp, dart_data=None):
@@ -115,7 +115,7 @@ def filterCornersLine(corners, rows, cols):
     return corners_final
 
 
-def getRealLocation(corners_final, mount, prev_tip_point=None, blur=None, kalman_filter=None):
+def getRealLocation(corners_final, camera_index, prev_tip_point=None, blur=None, kalman_filter=None):
     loc = np.argmax(corners_final, axis=0)
     locationofdart = corners_final[loc]
     
@@ -290,7 +290,21 @@ def detection_image(cam, flip, locationdart):
     return t
 
 
-def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions, kalman_filter_R, kalman_filter_L, kalman_filter_C, prev_tip_point_R, prev_tip_point_L, prev_tip_point_C, perspective_matrices):
+def save_temporary_image(cam, dart_index, camera_index):
+    ret, frame = cam.read()
+    if ret:
+        temp_dir = "images\\temp_images"
+        os.makedirs(temp_dir, exist_ok=True)
+        image_path = os.path.join(temp_dir, f"dart{dart_index}_camera{camera_index}.jpg")
+        cv2.imwrite(image_path, frame)
+        logging.debug(f"Temporary image saved: {image_path}")
+        return image_path
+    else:
+        logging.warning(f"Failed to capture image for dart {dart_index} from camera {camera_index}")
+        return None
+
+
+def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions, kalman_filter_R, kalman_filter_L, kalman_filter_C, prev_tip_point_R, prev_tip_point_L, prev_tip_point_C, perspective_matrices, dart_index):
     dart_data = []
     motion_detected = False
 
@@ -310,18 +324,19 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
 
         try:
             results = []
-            for cam, thresh, kalman_filter, mount, t in zip(
+            for cam, thresh, kalman_filter, camera_index, t in zip(
                 [cam_R, cam_L, cam_C], [thresh_R, thresh_L, thresh_C],
                 [kalman_filter_R, kalman_filter_L, kalman_filter_C],
                 [0, 1, 2], [t_R, t_L, t_C]
             ):
-                thresh, corners_final, blur = process_camera(thresh, cam, t, flip=(mount != 2))
-                location, _ = getRealLocation(corners_final, mount, None, blur, kalman_filter)
+                thresh, corners_final, blur = process_camera(thresh, cam, t, flip=(camera_index != 2))
+                location, _ = getRealLocation(corners_final, camera_index, None, blur, kalman_filter)
 
                 if isinstance(location, tuple) and len(location) == 2:
-                    x, y = location
-                    score, description, data = calculate_score_from_coordinates(x, y, mount, perspective_matrices)
+                    temp_image_path = save_temporary_image(cam, dart_index, camera_index)
 
+                    x, y = location
+                    score, description, data = calculate_score_from_coordinates(x, y, camera_index, perspective_matrices)
                     
                     assert isinstance(data, dict), f"Data is not a dictionary: {data}"
                     assert "detected_score" in data, f"'detected_score' missing in data: {data}"
@@ -329,9 +344,9 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                     results.append(data)
                     logging.debug(f"Appended data to results: {data}")
 
-                    camera_scores[mount] = score  
-                    descriptions[mount] = description  
-                    logging.info(f"Camera {mount} - Dart detected at ({x}, {y}). Score: {score}, Zone: {description}")
+                    camera_scores[camera_index] = score  
+                    descriptions[camera_index] = description  
+                    logging.info(f"Camera {camera_index} - Dart detected at ({x}, {y}). Score: {score}, Zone: {description}")
 
             if results:
                 dart_data.append(results)
@@ -348,11 +363,6 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                 final_score = max(set(scores), key=scores.count)
                 logging.debug(f"Final score determined: {final_score}")
                 
-                """
-                majority_camera_index = camera_scores.index(final_score)
-                final_description = descriptions[majority_camera_index]
-                """
-
                 final_camera_index = -1  
                 transformed_x = None
                 transformed_y = None
