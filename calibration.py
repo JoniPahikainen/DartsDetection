@@ -3,9 +3,7 @@ import numpy as np
 import time
 from config import (DOUBLE_RING_OUTER_RADIUS_PIXELS, CENTER, CAMERA_INDEXES)
 
-# Global variables
 perspective_matrices = []
-
 
 def calibrate():
     global drawn_points

@@ -1,6 +1,6 @@
 import customtkinter as ctk
-from PIL import Image, ImageDraw
 from Detect import detect_dart
+from PIL import Image
 import logging
 from config import (NUMBER_OF_CAMERAS, CAMERA_INDEXES)
 import cv2
@@ -103,10 +103,9 @@ def clear_fields():
 
 
 def create_placeholder_image(file_path):
-    img = Image.new('RGB', (200, 200), color=(211, 211, 211))
-    draw = ImageDraw.Draw(img)
-    draw.text((50, 90), "No Image", fill=(0, 0, 0))
-    img.save(file_path)
+    img = np.full((200, 200, 3), 211, dtype=np.uint8)
+    cv2.putText(img, "No Image", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv2.LINE_AA)
+    cv2.imwrite(file_path, img)
 
 
 def preload_images():
@@ -115,17 +114,20 @@ def preload_images():
             logging.info(f"Creating placeholder image for {file_path}")
             create_placeholder_image(file_path)
         try:
-            image = ctk.CTkImage(
-                light_image=Image.open(file_path),
-                dark_image=Image.open(file_path),
-                size=(200, 200)
-            )
+            img = cv2.imread(file_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (200, 200))
+            img = Image.fromarray(img)
+
+            image = ctk.CTkImage(light_image=img, dark_image=img, size=(200, 200))
+
             image_labels[index].configure(image=image)
             image_labels[index].image = image
             detected_score_vars[index].set(f"Detected: {50 + index}")
         except Exception as e:
             logging.error(f"Error loading image {file_path}: {e}")
             detected_score_vars[index].set("Error Loading Image")
+
 
 
 def cam2gray(cam, flip=False):
@@ -262,23 +264,26 @@ def parse_correction_input(correction_input):
 
 def update_gui_with_dart_data(index, dart_data, image_path):
     if isinstance(dart_data, list) and len(dart_data) > 1:
-        summary_data = dart_data[-1]  
+        summary_data = dart_data[-1]
     else:
-        summary_data = dart_data  
-    
+        summary_data = dart_data
+
     detected_score = summary_data.get('detected_score', "N/A")
     detected_zone = summary_data.get('detected_zone', "N/A")
 
     detected_score_vars[index].set(detected_score)
     detected_zone_vars[index].set(f"{detected_score} ({detected_zone})")
-    
-    image = ctk.CTkImage(
-        light_image=Image.open(image_path),
-        dark_image=Image.open(image_path),
-        size=(200, 200)
-    )
+
+    img = cv2.imread(image_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img, (200, 200))
+    img = Image.fromarray(img)
+
+    image = ctk.CTkImage(light_image=img, dark_image=img, size=(200, 200))
+
     image_labels[index].configure(image=image)
     image_labels[index].image = image
+
 
 
 def collect_and_save_data():
