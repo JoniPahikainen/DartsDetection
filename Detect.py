@@ -115,14 +115,14 @@ def filterCornersLine(corners, rows, cols):
     return corners_final
 
 
-def getRealLocation(corners_final, camera_index, prev_tip_point=None, blur=None, kalman_filter=None):
+def getRealLocation(corners_final, camera_index, prev_tip_point=None, blur=None):
     loc = np.argmax(corners_final, axis=0)
     locationofdart = corners_final[loc]
     
     dart_contour = corners_final.reshape((-1, 1, 2))
     skeleton = cv2.ximgproc.thinning(cv2.drawContours(np.zeros_like(blur), [dart_contour], -1, 255, thickness=cv2.FILLED))
     
-    dart_tip = find_dart_tip(skeleton, prev_tip_point, kalman_filter)
+    dart_tip = find_dart_tip(skeleton, prev_tip_point)
     
     if dart_tip is not None:
         tip_x, tip_y = dart_tip
@@ -200,35 +200,7 @@ def load_perspective_matrices():
     return perspective_matrices
 
 
-class KalmanFilter:
-    def __init__(self, dt, u_x, u_y, std_acc, x_std_meas, y_std_meas):
-        self.dt = dt
-        self.u_x = u_x
-        self.u_y = u_y
-        self.std_acc = std_acc
-        self.A = np.array([[1, 0, self.dt, 0], [0, 1, 0, self.dt], [0, 0, 1, 0], [0, 0, 0, 1]])
-        self.B = np.array([[(self.dt**2)/2, 0], [0, (self.dt**2)/2], [self.dt, 0], [0, self.dt]])
-        self.H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
-        self.Q = np.array([[(self.dt**4)/4, 0, (self.dt**3)/2, 0], [0, (self.dt**4)/4, 0, (self.dt**3)/2], [(self.dt**3)/2, 0, self.dt**2, 0], [0, (self.dt**3)/2, 0, self.dt**2]]) * self.std_acc**2
-        self.R = np.array([[x_std_meas**2, 0], [0, y_std_meas**2]])
-        self.P = np.eye(4)
-        self.x = np.zeros((4, 1))
-
-    def predict(self):
-        self.x = np.dot(self.A, self.x) + np.dot(self.B, np.array([[self.u_x], [self.u_y]]))
-        self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
-        return self.x
-
-    def update(self, z):
-        y = z - np.dot(self.H, self.x)
-        S = np.dot(self.H, np.dot(self.P, self.H.T)) + self.R
-        K = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S))
-        self.x = self.x + np.dot(K, y)
-        I = np.eye(self.H.shape[1])
-        self.P = np.dot(np.dot(I - np.dot(K, self.H), self.P), (I - np.dot(K, self.H)).T) + np.dot(np.dot(K, self.R), K.T)
-
-
-def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
+def find_dart_tip(skeleton, prev_tip_point):
     contours, _ = cv2.findContours(skeleton, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     if len(contours) > 0:
@@ -237,28 +209,8 @@ def find_dart_tip(skeleton, prev_tip_point, kalman_filter):
         dart_points = dart_polygon.exterior.coords
         lowest_point = max(dart_points, key=lambda x: x[1])
         tip_point = lowest_point
-        predicted_tip = kalman_filter.predict()
-        kalman_filter.update(np.array([[tip_point[0]], [tip_point[1]]]))
         return int(tip_point[0]), int(tip_point[1])
     return None
-
-
-def perform_takeout(cams, kalman_filters, takeout_delay=1.0):
-    logging.info("Takeout procedure initiated.")
-
-    for kf in kalman_filters:
-        kf.x = np.zeros((4, 1))
-        kf.P = np.eye(4)
-
-    start_time = time.time()
-    while time.time() - start_time < takeout_delay:
-        for cam in cams:
-            success, _ = cam2gray(cam)
-            if not success:
-                logging.warning("Camera read failed during takeout.")
-        time.sleep(0.1)
-
-    logging.info("Takeout procedure completed.")
 
 
 def process_camera(thresh, cam, t, flip):
@@ -304,7 +256,7 @@ def save_temporary_image(cam, dart_index, camera_index):
         return None
 
 
-def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions, kalman_filter_R, kalman_filter_L, kalman_filter_C, prev_tip_point_R, prev_tip_point_L, prev_tip_point_C, perspective_matrices, dart_index):
+def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions, prev_tip_point_R, prev_tip_point_L, prev_tip_point_C, perspective_matrices, dart_index):
     dart_data = []
     motion_detected = False
 
@@ -324,13 +276,12 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
 
         try:
             results = []
-            for cam, thresh, kalman_filter, camera_index, t in zip(
+            for cam, thresh, camera_index, t in zip(
                 [cam_R, cam_L, cam_C], [thresh_R, thresh_L, thresh_C],
-                [kalman_filter_R, kalman_filter_L, kalman_filter_C],
                 [0, 1, 2], [t_R, t_L, t_C]
             ):
                 thresh, corners_final, blur = process_camera(thresh, cam, t, flip=(camera_index != 2))
-                location, _ = getRealLocation(corners_final, camera_index, None, blur, kalman_filter)
+                location, _ = getRealLocation(corners_final, camera_index, None, blur)
 
                 if isinstance(location, tuple) and len(location) == 2:
                     temp_image_path = save_temporary_image(cam, dart_index, camera_index)

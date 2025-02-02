@@ -157,21 +157,8 @@ def run_dart_detection():
     _, t_L = cam2gray(cam_L, flip=True)
     _, t_C = cam2gray(cam_C, flip=False)
     capture_time = time.time() - capture_start
-    
-    kalman_start = time.time()
-    dt = 1.0 / 30.0 
-    u_x = 0
-    u_y = 0
-    std_acc = 1.0
-    x_std_meas = 0.1
-    y_std_meas = 0.1
-    
-    kalman_filter_R = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
-    kalman_filter_L = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
-    kalman_filter_C = KalmanFilter(dt, u_x, u_y, std_acc, x_std_meas, y_std_meas)
-    kalman_time = time.time() - kalman_start
 
-    logging.debug("Init Summary: Perspective Load: %.2fs, Camera Init: %.2fs, Frame Capture: %.2fs, Kalman Init: %.2fs", perspective_time, camera_init_time, capture_time, kalman_time)
+    logging.debug("Init Summary: Perspective Load: %.2fs, Camera Init: %.2fs, Frame Capture: %.2fs", perspective_time, camera_init_time, capture_time)
 
     camera_scores = [None] * NUMBER_OF_CAMERAS
     descriptions = [None] * NUMBER_OF_CAMERAS
@@ -186,7 +173,6 @@ def run_dart_detection():
         dart_result, t_R, t_L, t_C = detect_dart(
             cam_R, cam_L, cam_C, t_R, t_L, t_C,
             camera_scores, descriptions,
-            kalman_filter_R, kalman_filter_L, kalman_filter_C,
             None, None, None,
             perspective_matrices, dart_index=i
         )
@@ -389,36 +375,6 @@ def finalize_images(temp_dir="images\\temp_images", final_dir="images\\corrected
         except (ValueError, IndexError) as e:
             logging.error(f"Error processing file {filename}: {e}")
     return finalized_image_paths
-
-
-class KalmanFilter:
-    def __init__(self, dt, u_x, u_y, std_acc, x_std_meas, y_std_meas):
-        self.dt = dt
-        self.u_x = u_x
-        self.u_y = u_y
-        self.std_acc = std_acc
-        self.A = np.array([[1, 0, self.dt, 0], [0, 1, 0, self.dt], [0, 0, 1, 0], [0, 0, 0, 1]])
-        self.B = np.array([[(self.dt**2)/2, 0], [0, (self.dt**2)/2], [self.dt, 0], [0, self.dt]])
-        self.H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
-        self.Q = np.array([[(self.dt**4)/4, 0, (self.dt**3)/2, 0], [0, (self.dt**4)/4, 0, (self.dt**3)/2], [(self.dt**3)/2, 0, self.dt**2, 0], [0, (self.dt**3)/2, 0, self.dt**2]]) * self.std_acc**2
-        self.R = np.array([[x_std_meas**2, 0], [0, y_std_meas**2]])
-        self.P = np.eye(4)
-        self.x = np.zeros((4, 1))
-
-
-    def predict(self):
-        self.x = np.dot(self.A, self.x) + np.dot(self.B, np.array([[self.u_x], [self.u_y]]))
-        self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
-        return self.x
-
-
-    def update(self, z):
-        y = z - np.dot(self.H, self.x)
-        S = np.dot(self.H, np.dot(self.P, self.H.T)) + self.R
-        K = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S))
-        self.x = self.x + np.dot(K, y)
-        I = np.eye(self.H.shape[1])
-        self.P = np.dot(np.dot(I - np.dot(K, self.H), self.P), (I - np.dot(K, self.H)).T) + np.dot(np.dot(K, self.R), K.T)
 
 
 ctk.set_appearance_mode("Dark")  
