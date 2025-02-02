@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project focuses on detecting darts and calculating scores on a dartboard using a multi-camera setup. The system employs **computer vision techniques**, **Kalman filters**, and **perspective transformations** to accurately track and determine dart positions and corresponding scores.
+This project focuses on detecting darts and calculating scores on a dartboard using a multi-camera setup. The system employs **computer vision techniques** and **perspective transformations** to accurately track and determine dart positions and corresponding scores.
 
 The thesis aims to showcase the integration of programming, machine learning, and real-world applications in the field of Information and Communications Technology (ICT).
 
@@ -33,9 +33,6 @@ This project is actively being developed as part of my thesis. However, updates 
 
 - **Data Logging**:
   - Logs dart data, including coordinates, score, and zone, in JSON format for analysis and debugging.
-
-- **Robust Dart Tracking**:
-  - Uses Kalman filters to handle motion prediction and noise reduction.
 
 ---
 
