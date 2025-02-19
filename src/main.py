@@ -1,26 +1,14 @@
 import customtkinter as ctk
-from .detect import detect_dart
-from PIL import Image
-import logging
-from .config import (NUMBER_OF_CAMERAS, CAMERA_INDEXES)
 import cv2
 import numpy as np
-import json
 import time
 import os
 
+from .detect import detect_dart
+from PIL import Image
+from .core import logger, log_to_json
+from .config import (NUMBER_OF_CAMERAS, CAMERA_INDEXES)
 
-file_handler = logging.FileHandler("app.log")
-file_handler.setLevel(logging.DEBUG)  
-
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)  
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[file_handler, console_handler]
-)
 
 image_paths = [
     "images/camera_0_image.jpg",
@@ -38,7 +26,7 @@ def initialize_cameras():
         cam_R, cam_L, cam_C = cams
         print("Cameras initialized.")
     else:
-        logging.debug("Cameras already initialized.")
+        logger.debug("Cameras already initialized.")
 
 
 def initialize_camera(index, width=432, height=432):
@@ -46,31 +34,6 @@ def initialize_camera(index, width=432, height=432):
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     return cam if cam.isOpened() else None
-
-
-def setup_json():
-    with open('darts_data.json', mode='w') as file:
-        json.dump([], file, indent=4)  
-
-
-def log_to_json(data):
-    try:
-        
-        with open('darts_data.json', mode='r+') as file:
-            try:
-                file_data = json.load(file)  
-            except json.JSONDecodeError:
-                logging.warning("JSON file is corrupted or empty. Resetting the file.")
-                file_data = []  
-            
-            file_data.append(data)  
-            file.seek(0)           
-            json.dump(file_data, file, indent=4)  
-    except FileNotFoundError:
-        logging.warning("JSON file not found. Creating a new file.")
-        setup_json()  
-        log_to_json(data)
-
 
 def save_dart_data(dart_group):
     timestamp = time.time()
@@ -94,7 +57,7 @@ def load_perspective_matrices():
             perspective_matrices.append(matrix)
 
         except FileNotFoundError:
-            logging.error(f"Perspective matrix file not found for camera {camera_index}. Please calibrate the cameras first.")
+            logger.error(f"Perspective matrix file not found for camera {camera_index}. Please calibrate the cameras first.")
             exit(1)
     
     return perspective_matrices
@@ -117,7 +80,7 @@ def create_placeholder_image(file_path):
 def preload_images():
     for index, file_path in enumerate(image_paths):
         if not os.path.exists(file_path):
-            logging.info(f"Creating placeholder image for {file_path}")
+            logger.info(f"Creating placeholder image for {file_path}")
             create_placeholder_image(file_path)
         try:
             img = cv2.imread(file_path)
@@ -131,7 +94,7 @@ def preload_images():
             image_labels[index].image = image
             detected_score_vars[index].set(f"Detected: {50 + index}")
         except Exception as e:
-            logging.error(f"Error loading image {file_path}: {e}")
+            logger.error(f"Error loading image {file_path}: {e}")
             detected_score_vars[index].set("Error Loading Image")
 
 
@@ -164,7 +127,7 @@ def run_dart_detection():
     _, t_C = cam2gray(cam_C, flip=False)
     capture_time = time.time() - capture_start
 
-    logging.debug("Init Summary: Perspective Load: %.2fs, Camera Init: %.2fs, Frame Capture: %.2fs", perspective_time, camera_init_time, capture_time)
+    logger.debug("Init Summary: Perspective Load: %.2fs, Camera Init: %.2fs, Frame Capture: %.2fs", perspective_time, camera_init_time, capture_time)
 
     camera_scores = [None] * NUMBER_OF_CAMERAS
     descriptions = [None] * NUMBER_OF_CAMERAS
@@ -172,7 +135,7 @@ def run_dart_detection():
     
 
     for i in range(3):  
-        logging.info(f"Detecting dart {i+1}...")
+        logger.info(f"Detecting dart {i+1}...")
         dart_start = time.time()
         
         detect_start = time.time()
@@ -202,19 +165,19 @@ def run_dart_detection():
             cv2.imwrite(image_path, processed_image)
             save_time = time.time() - save_start
             
-            logging.debug(f"Dart detected for attempt {i+1}: x={x_coordinate}, y={y_coordinate}")
+            logger.debug(f"Dart detected for attempt {i+1}: x={x_coordinate}, y={y_coordinate}")
             gui_update_start = time.time()
             update_gui_with_dart_data(i, dart_result, image_path)
             gui_update_time = time.time() - gui_update_start
         else:
-            logging.warning(f"No dart detected for attempt {i+1}")
+            logger.warning(f"No dart detected for attempt {i+1}")
             update_gui_with_dart_data(i, {"detected_score": "N/A", "detected_zone": "N/A"}, image_paths[i])
 
         dart_total_time = time.time() - dart_start
-        logging.info(f"Dart {i+1} Score: {detected_score} | Detection: {detect_time:.2f}s, Save: {save_time:.2f}s, GUI Update: {gui_update_time:.2f}s, Total: {dart_total_time:.2f}s")
+        logger.info(f"Dart {i+1} Score: {detected_score} | Detection: {detect_time:.2f}s, Save: {save_time:.2f}s, GUI Update: {gui_update_time:.2f}s, Total: {dart_total_time:.2f}s")
     
     total_process_time = time.time() - process_start
-    logging.debug(f"Total Detection Process: {total_process_time:.2f}s")
+    logger.debug(f"Total Detection Process: {total_process_time:.2f}s")
 
 
 def detection_image(cam_image, locationdart):
@@ -325,13 +288,13 @@ def collect_and_save_data():
             dart_group[i]["image_path"] = ""
 
     save_dart_data(dart_group)
-    logging.info("Dart data collected and saved.")
+    logger.info("Dart data collected and saved.")
 
     if stop_after_submit_var.get():
-        logging.info("Stopping detection after submit...")
+        logger.info("Stopping detection after submit...")
         cleanup_cameras()
     else:
-        logging.info("Continuing detection...")
+        logger.info("Continuing detection...")
         clear_fields()
         run_dart_detection()
 
@@ -345,12 +308,12 @@ def cleanup_cameras():
     if cam_C:
         cam_C.release()
     cv2.destroyAllWindows()
-    logging.info("Cameras released and cleaned up.")
+    logger.info("Cameras released and cleaned up.")
 
 
 def stop_detection():
     cleanup_cameras()
-    logging.info("Detection stopped.")
+    logger.info("Detection stopped.")
 
 
 def finalize_images(temp_dir="images\\temp_images", final_dir="images\\corrected", corrected_darts=None):
@@ -362,7 +325,7 @@ def finalize_images(temp_dir="images\\temp_images", final_dir="images\\corrected
         try:
             dart_number = int(filename.split("_")[0].replace("dart", ""))
             temp_path = os.path.join(temp_dir, filename)
-            logging.debug(f"Processing file {filename} for dart {dart_number}...")
+            logger.debug(f"Processing file {filename} for dart {dart_number}...")
 
             if corrected_darts:
                 if corrected_darts[dart_number - 1]:
@@ -371,15 +334,15 @@ def finalize_images(temp_dir="images\\temp_images", final_dir="images\\corrected
                     final_filename = f"{timestamp}_{name.replace(f'dart{dart_number - 1}', f'dart{dart_number}')}{ext}"
                     final_path = os.path.join(final_dir, final_filename)
                     os.rename(temp_path, final_path)
-                    logging.info(f"Finalized image: {final_path}")
+                    logger.info(f"Finalized image: {final_path}")
                     finalized_image_paths.append(final_path)
                 else:
                     os.remove(temp_path)
-                    logging.debug(f"Deleted temporary image: {temp_path}")
+                    logger.debug(f"Deleted temporary image: {temp_path}")
             else:
-                logging.warning(f"Skipping file {filename} due to mismatch with corrected_darts list.")
+                logger.warning(f"Skipping file {filename} due to mismatch with corrected_darts list.")
         except (ValueError, IndexError) as e:
-            logging.error(f"Error processing file {filename}: {e}")
+            logger.error(f"Error processing file {filename}: {e}")
     return finalized_image_paths
 
 
