@@ -1,8 +1,8 @@
 import customtkinter as ctk
-from Detect import detect_dart
+from .detect import detect_dart
 from PIL import Image
 import logging
-from config import (NUMBER_OF_CAMERAS, CAMERA_INDEXES)
+from .config import (NUMBER_OF_CAMERAS, CAMERA_INDEXES)
 import cv2
 import numpy as np
 import json
@@ -80,17 +80,23 @@ def save_dart_data(dart_group):
     }
     log_to_json(data)
 
-
 def load_perspective_matrices():
     perspective_matrices = []
+    calibration_dir = os.path.join(os.path.dirname(__file__), "../data/calibration")
+    calibration_dir = os.path.abspath(calibration_dir)
+    
     for camera_index in range(NUMBER_OF_CAMERAS):
         try:
-            data = np.load(f'camera_calibration_{camera_index}.npz')
+            file_path = os.path.join(calibration_dir, f'camera_calibration_{camera_index}.npz')
+        
+            data = np.load(file_path)
             matrix = data['matrix']
             perspective_matrices.append(matrix)
+
         except FileNotFoundError:
             logging.error(f"Perspective matrix file not found for camera {camera_index}. Please calibrate the cameras first.")
             exit(1)
+    
     return perspective_matrices
 
 

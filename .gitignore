@@ -15,3 +15,10 @@ app.log
 
 # Ignore the json file where the dart detection data is stored
 darts_data.json
+
+
+data/
+logs/
+
+
+src/thesis/
