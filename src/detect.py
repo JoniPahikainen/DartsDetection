@@ -101,7 +101,7 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                     temp_image_path = save_temporary_image(cam, dart_index, camera_index)
 
                     x, y = location
-                    score, description, data = get_score.calculate_score_from_coordinates(x, y, camera_index, perspective_matrices)
+                    score, category, data = get_score.calculate_score_from_coordinates(x, y, camera_index, perspective_matrices)
                     
                     assert isinstance(data, dict), f"Data is not a dictionary: {data}"
                     assert "detected_score" in data, f"'detected_score' missing in data: {data}"
@@ -110,8 +110,8 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                     logger.debug(f"Appended data to results: {data}")
 
                     camera_scores[camera_index] = score  
-                    descriptions[camera_index] = description  
-                    logger.info(f"Camera {camera_index} - Dart detected at ({x}, {y}). Score: {score}, Zone: {description}")
+                    descriptions[camera_index] = category  
+                    logger.info(f"Camera {camera_index} - Dart detected at ({x}, {y}). Score: {score}, Zone: {category}")
 
             if results:
                 dart_data.append(results)
@@ -143,10 +143,9 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
 
                 logger.debug(f"Final camera index determined: {final_camera_index}")
 
-                final_description = next(
-                    (res["zone"] for res in results if res["detected_score"] == final_score),
-                    "Unknown"
-                )
+                #EDIT THIS SO IT WILL USE LIKE MULTIBLE OR REMOVE 
+                final_description = res["category"]
+
 
                 logger.debug(f"Final score: {final_score}")
 
@@ -154,7 +153,7 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                     "x_coordinate": transformed_x,
                     "y_coordinate": transformed_y,
                     "detected_score": final_score,
-                    "detected_zone": final_description,
+                    "detected_catecory": final_description,
                     "final_camera_index": final_camera_index
                 })
 

@@ -99,7 +99,7 @@ def preload_images():
 
 
 
-def cam2gray(cam, flip=False):
+def cam_to_gray(cam, flip=False):
     success, image = cam.read()
     if flip and success:
         image = cv2.flip(image, 0)
@@ -122,9 +122,9 @@ def run_dart_detection():
     camera_init_time = time.time() - camera_init_start
     
     capture_start = time.time()
-    success, t_R = cam2gray(cam_R, flip=True)
-    _, t_L = cam2gray(cam_L, flip=True)
-    _, t_C = cam2gray(cam_C, flip=False)
+    success, t_R = cam_to_gray(cam_R, flip=True)
+    _, t_L = cam_to_gray(cam_L, flip=True)
+    _, t_C = cam_to_gray(cam_C, flip=False)
     capture_time = time.time() - capture_start
 
     logger.debug("Init Summary: Perspective Load: %.2fs, Camera Init: %.2fs, Frame Capture: %.2fs", perspective_time, camera_init_time, capture_time)

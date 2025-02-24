@@ -7,18 +7,11 @@ images/
 # Ignore all __pycache__ directories, which store Python bytecode
 **/__pycache__/
 
-# Ignore camera calibration files with names like 'camera_calibration_0.npz', 'camera_calibration_1.npz', etc.
-camera_calibration_*.npz
-
-# Ignore the log file where the application logs are stored
-app.log
-
-# Ignore the json file where the dart detection data is stored
-darts_data.json
-
-
+# Ignore all data directories, which store data files 
 data/
+
+# Ignore all logs directories, which store log files
 logs/
 
-
+# Ignore all thesis directories, which store thesis files
 src/thesis/
