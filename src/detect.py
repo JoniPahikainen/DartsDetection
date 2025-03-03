@@ -23,6 +23,8 @@ perspective_matrices = []
 
 def initialize_camera(index, width=432, height=432):
     cam = cv2.VideoCapture(index)
+    if index == 1:
+        cam.set(cv2.CAP_PROP_BRIGHTNESS, 100)
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     return cam if cam.isOpened() else None
@@ -56,17 +58,17 @@ def detection_image(cam, flip, locationdart):
     return t
 
 
-def save_temporary_image(cam, dart_index, camera_index):
+def save_temporary_image(cam, dart_index, camera_index, image_type="after"):
     ret, frame = cam.read()
     if ret:
         temp_dir = "images\\temp_images"
         os.makedirs(temp_dir, exist_ok=True)
-        image_path = os.path.join(temp_dir, f"dart{dart_index}_camera{camera_index}.jpg")
+        image_path = os.path.join(temp_dir, f"dart{dart_index}_camera{camera_index}_{image_type}.jpg")
         cv2.imwrite(image_path, frame)
-        logger.debug(f"Temporary image saved: {image_path}")
+        logger.debug(f"Temporary {image_type} image saved: {image_path}")
         return image_path
     else:
-        logger.warning(f"Failed to capture image for dart {dart_index} from camera {camera_index}")
+        logger.warning(f"Failed to capture {image_type} image for dart {dart_index} from camera {camera_index}")
         return None
 
 
@@ -74,7 +76,11 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
     dart_data = []
     motion_detected = False
 
-    while not motion_detected:  
+    _ = save_temporary_image(cam_R, dart_index, 0, "before")
+    _ = save_temporary_image(cam_L, dart_index, 1, "before")
+    _ = save_temporary_image(cam_C, dart_index, 2, "before")
+
+    while not motion_detected:
         time.sleep(0.1)
         thresh_R = process.get_threshold(cam_R, t_R, flip=True)
         thresh_L = process.get_threshold(cam_L, t_L, flip=True)
@@ -98,7 +104,7 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                 location, _ = get_location.get_real_location(corners_final, camera_index, None, blur)
 
                 if isinstance(location, tuple) and len(location) == 2:
-                    temp_image_path = save_temporary_image(cam, dart_index, camera_index)
+                    temp_image_path = save_temporary_image(cam, dart_index, camera_index, "after")
 
                     x, y = location
                     score, category, data = get_score.calculate_score_from_coordinates(x, y, camera_index, perspective_matrices)

@@ -31,6 +31,8 @@ def initialize_cameras():
 
 def initialize_camera(index, width=432, height=432):
     cam = cv2.VideoCapture(index)
+    if index == 1:
+        cam.set(cv2.CAP_PROP_BRIGHTNESS, 100)
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     return cam if cam.isOpened() else None
@@ -164,6 +166,8 @@ def run_dart_detection():
             image_path = f"images/dart_detection_{i+1}.jpg"
             cv2.imwrite(image_path, processed_image)
             save_time = time.time() - save_start
+
+
             
             logger.debug(f"Dart detected for attempt {i+1}: x={x_coordinate}, y={y_coordinate}")
             gui_update_start = time.time()
@@ -242,6 +246,9 @@ def update_gui_with_dart_data(index, dart_data, image_path):
 
 
 def collect_and_save_data():
+    global submit_count
+    submit_count.set(submit_count.get() + 1)
+    
     dart_group = []
     corrected_darts = []
 
@@ -323,22 +330,26 @@ def finalize_images(temp_dir="images\\temp_images", final_dir="images\\corrected
 
     for filename in temp_images:
         try:
-            dart_number = int(filename.split("_")[0].replace("dart", ""))
+            parts = filename.split("_")
+            dart_number = int(parts[0].replace("dart", ""))
+            camera_index = parts[1].replace("camera", "")
+            image_type = parts[-1].split(".")[0]
             temp_path = os.path.join(temp_dir, filename)
-            logger.debug(f"Processing file {filename} for dart {dart_number}...")
+            logger.debug(f"Processing file {filename} for dart {dart_number} ({image_type})...")
 
             if corrected_darts:
                 if corrected_darts[dart_number - 1]:
                     timestamp = int(time.time())
-                    name, ext = os.path.splitext(filename)
-                    final_filename = f"{timestamp}_{name.replace(f'dart{dart_number - 1}', f'dart{dart_number}')}{ext}"
+                    final_filename_base = f"{timestamp}_dart{dart_number}_camera{camera_index}_{image_type}"
+                    ext = os.path.splitext(filename)[1]
+                    final_filename = f"{final_filename_base}{ext}"
                     final_path = os.path.join(final_dir, final_filename)
                     os.rename(temp_path, final_path)
-                    logger.info(f"Finalized image: {final_path}")
+                    logger.info(f"Finalized {image_type} image: {final_path}")
                     finalized_image_paths.append(final_path)
                 else:
                     os.remove(temp_path)
-                    logger.debug(f"Deleted temporary image: {temp_path}")
+                    logger.debug(f"Deleted temporary {image_type} image: {temp_path}")
             else:
                 logger.warning(f"Skipping file {filename} due to mismatch with corrected_darts list.")
         except (ValueError, IndexError) as e:
@@ -388,11 +399,15 @@ stop_after_submit_checkbox.grid(row=2, column=0, pady=20)
 submit_button = ctk.CTkButton(frame, text="Submit", command=collect_and_save_data, fg_color="green")
 submit_button.grid(row=2, column=1, pady=20)  
 
+submit_count = ctk.IntVar(value=0)  # Initialize counter at 0
+submit_count_label = ctk.CTkLabel(frame, textvariable=submit_count, width=30, font=("Arial", 14))
+submit_count_label.grid(row=2, column=2, pady=20, padx=(0, 10))  # Positioned to the right of Submit
+
 stop_button = ctk.CTkButton(frame, text="Stop Detection", command=stop_detection, fg_color="red")
 stop_button.grid(row=3, column=2, pady=20)  
 
 start_button = ctk.CTkButton(frame, text="Start Detection", command=run_dart_detection, fg_color="blue")
-start_button.grid(row=2, column=2, pady=20)  
+start_button.grid(row=2, column=3, pady=20)  
 
 preload_images()
 root.mainloop()
