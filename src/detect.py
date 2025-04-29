@@ -106,10 +106,7 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                 [cam_R, cam_L, cam_C], [thresh_R, thresh_L, thresh_C],
                 [0, 1, 2], [t_R, t_L, t_C]
             ):
-                thresh, corners_final, blur = process.process_camera(thresh, cam, t, flip=(camera_index != 1), camera_index=camera_index)
-
-
-
+                corners_final, blur = process.process_camera(cam, t, flip=(camera_index != 1), camera_index=camera_index)
 
                 location, _ = get_location.get_real_location(corners_final, camera_index, None, blur)
 
