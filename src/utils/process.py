@@ -56,11 +56,14 @@ def diff_to_blur(cam, t, flip=False):
     return t_plus, blur
 
 
-def process_camera(thresh, cam, t, flip):
+def process_camera(thresh, cam, t, flip, camera_index):
     count = cv2.countNonZero(thresh)
     cv2.putText(thresh, f"Count: {count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
     time.sleep(0.2)
     _, blur = diff_to_blur(cam, t, flip)
+    print(f"camera index: {camera_index}. flip: {flip}")
+    tsest = "test" + str(camera_index) + ".jpg"
+    cv2.imwrite(tsest, blur)
     
     corners = get_corners(blur)
     corners_f = filter_corners(corners)

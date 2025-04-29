@@ -34,7 +34,13 @@ def load_perspective_matrices():
     perspective_matrices = []
     for camera_index in range(NUMBER_OF_CAMERAS):
         try:
-            data = np.load(f'camera_calibration_{camera_index}.npz')
+            if camera_index == 1:
+                test = 2
+            elif camera_index == 2:
+                test = 1
+            else:
+                test = camera_index
+            data = np.load(f'camera_calibration_{test}.npz')
             matrix = data['matrix']
             perspective_matrices.append(matrix)
         except FileNotFoundError:
@@ -83,8 +89,8 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
     while not motion_detected:
         time.sleep(0.1)
         thresh_R = process.get_threshold(cam_R, t_R, flip=True)
-        thresh_L = process.get_threshold(cam_L, t_L, flip=True)
-        thresh_C = process.get_threshold(cam_C, t_C, flip=False)
+        thresh_L = process.get_threshold(cam_L, t_L, flip=False)
+        thresh_C = process.get_threshold(cam_C, t_C, flip=True)
 
         if thresh_R is None or thresh_L is None or thresh_C is None:
             logger.warning("Failed to process one or more thresholds.")
@@ -100,7 +106,11 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                 [cam_R, cam_L, cam_C], [thresh_R, thresh_L, thresh_C],
                 [0, 1, 2], [t_R, t_L, t_C]
             ):
-                thresh, corners_final, blur = process.process_camera(thresh, cam, t, flip=(camera_index != 2))
+                thresh, corners_final, blur = process.process_camera(thresh, cam, t, flip=(camera_index != 1), camera_index=camera_index)
+
+
+
+
                 location, _ = get_location.get_real_location(corners_final, camera_index, None, blur)
 
                 if isinstance(location, tuple) and len(location) == 2:
@@ -164,8 +174,8 @@ def detect_dart(cam_R, cam_L, cam_C, t_R, t_L, t_C, camera_scores, descriptions,
                 })
 
             _, t_R = process.cam_to_gray(cam_R, flip=True)
-            _, t_L = process.cam_to_gray(cam_L, flip=True)
-            _, t_C = process.cam_to_gray(cam_C, flip=False)
+            _, t_L = process.cam_to_gray(cam_L, flip=False)
+            _, t_C = process.cam_to_gray(cam_C, flip=True)
 
             logger.debug("Dart detection completed.")
             return dart_data, t_R, t_L, t_C

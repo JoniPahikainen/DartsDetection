@@ -22,12 +22,14 @@ def draw_segment_text(image, center, start_angle, end_angle, radius, text):
     text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
     text_origin = (text_x - text_size[0] // 2, text_y + text_size[1] // 2)
     # Draw the text
-    cv2.putText(image, text, text_origin, font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+    #cv2.putText(image, text, text_origin, font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+    cv2.putText(image, text, text_origin, font, font_scale, (0, 0, 0), font_thickness, cv2.LINE_AA)
 
 
 def draw_dartboard(dartboard_image, IMAGE_HEIGHT, IMAGE_WIDTH, DARTBOARD_DIAMETER_MM, center):
     #dartboard_image = np.ones((FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, 3), dtype=np.uint8) * 60   (82, 57, 39)
-    dartboard_image = np.full((FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, 3), (65, 57, 53), dtype=np.uint8)
+    #dartboard_image = np.full((FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, 3), (65, 57, 53), dtype=np.uint8)
+    dartboard_image = np.full((FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, 3), (255, 255, 255), dtype=np.uint8)
 
     # Draw the bullseye
     cv2.circle(dartboard_image, center, BULLSEYE_RADIUS_PIXELS, (219, 133, 95), -1, lineType=cv2.LINE_AA)  # Red-Orange Bullseye
@@ -67,6 +69,7 @@ def draw_dartboard(dartboard_image, IMAGE_HEIGHT, IMAGE_WIDTH, DARTBOARD_DIAMETE
 
     for angle in sector_intersections.values():
         # Draw the sector intersections
-        draw_point_at_angle(dartboard_image, center, angle, DOUBLE_RING_OUTER_RADIUS_PIXELS, (255, 255, 255), 5)
+        #draw_point_at_angle(dartboard_image, center, angle, DOUBLE_RING_OUTER_RADIUS_PIXELS, (255, 255, 255), 5)
+        continue
 
     return dartboard_image

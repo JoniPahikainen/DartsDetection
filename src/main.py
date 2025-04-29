@@ -125,8 +125,8 @@ def run_dart_detection():
     
     capture_start = time.time()
     success, t_R = cam_to_gray(cam_R, flip=True)
-    _, t_L = cam_to_gray(cam_L, flip=True)
-    _, t_C = cam_to_gray(cam_C, flip=False)
+    _, t_L = cam_to_gray(cam_L, flip=False)
+    _, t_C = cam_to_gray(cam_C, flip=True)
     capture_time = time.time() - capture_start
 
     logger.debug("Init Summary: Perspective Load: %.2fs, Camera Init: %.2fs, Frame Capture: %.2fs", perspective_time, camera_init_time, capture_time)

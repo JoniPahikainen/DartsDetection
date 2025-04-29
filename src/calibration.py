@@ -37,7 +37,7 @@ def calibrate_camera(camera_index):
         cap.release()
         return None
     
-    if camera_index in [0, 1]:
+    if camera_index in [0, 2]:
         frame = cv2.flip(frame,0)
 
     if ret:
