@@ -1,18 +1,26 @@
-# Dart Detection System - School Thesis Project
+# Dart Detection System
 
 ## Overview
 
-This project focuses on detecting darts and calculating scores on a dartboard using a multi-camera setup. The system employs **computer vision techniques** and **perspective transformations** to accurately track and determine dart positions and corresponding scores.
+This project focuses on detecting darts and calculating scores on a dartboard using a multi-camera setup. The system employs computer vision techniques and perspective transformations to accurately track and determine dart positions and corresponding scores.
 
-The thesis aims to showcase the integration of programming, machine learning, and real-world applications in the field of Information and Communications Technology (ICT).
+This project was originally developed as a Bachelor's Thesis for an Information and Communications Technology (ICT) degree, showcasing the integration of programming, machine learning, and real-world applications.
+
+---
+
+## Thesis Publication
+
+The academic phase of this project is complete. The full thesis documentation can be found at the following link:
+
+**Path:** https://www.theseus.fi/handle/10024/885921
 
 ---
 
 ## Project Status
 
-**Development in Progress – Updates Are Coming Slowly**
+**Current Status: On Break**
 
-This project is actively being developed as part of my thesis. However, updates are currently less frequent as I focus on completing the thesis documentation. Despite the slower pace, improvements and new features will continue to be added over time.
+Development is currently on hold. While the project is no longer strictly tied to thesis requirements, it remains an active personal project that will be updated in the future according to the roadmap below.
 
 ---
 
@@ -38,23 +46,34 @@ This project is actively being developed as part of my thesis. However, updates 
 
 ## System Requirements
 
-- **Programming Language:** Python 3.8 or later  
-- **Libraries:**  
-  - `customtkinter==5.2.2` – Modern Tkinter GUI framework  
-  - `darkdetect==0.8.0` – Detect system dark mode  
-  - `numpy==2.2.1` – Numerical computations  
-  - `opencv-contrib-python==4.10.0.84` – Computer vision (with extra modules)  
-  - `packaging==24.2` – Package version handling  
-  - `pillow==11.1.0` – Image processing  
-  - `shapely==2.0.6` – Geometric operations  
-  - `json` and `logging` – *(Python built-in modules)*  
+- **Programming Language:** Python 3.8 or later
+- **Software Libraries:**
+  - `customtkinter==5.2.2` – Modern Tkinter GUI framework
+  - `darkdetect==0.8.0` – Detect system dark mode
+  - `numpy==2.2.1` – Numerical computations
+  - `opencv-contrib-python==4.10.0.84` – Computer vision
+  - `packaging==24.2` – Package version handling
+  - `pillow==11.1.0` – Image processing
+  - `shapely==2.0.6` – Geometric operations
+  - `json` and `logging` – (Python built-in modules)
 
-- **Hardware:**  
-  - 3 cameras  
-  - Computer with sufficient processing power for real-time video processing  
-
+- **Hardware:**
+  - 3 cameras
+  - Computer with sufficient processing power for real-time video processing
 
 ---
 
+## Future Roadmap
 
+### Phase 1: GUI and Game Modes
+- Finalize the Graphical User Interface to a production-ready state.
+- Implement "Play versus Bot" functionality.
+- Add training modules for practice and skill assessment.
 
+### Phase 2: Analytics
+- Integration of performance statistics and graphical data visualization.
+- Implementation of skill tracking over time.
+
+### Phase 3: Online and Web Integration
+- Development of a dedicated website for the system.
+- Implementation of online multiplayer capabilities.
